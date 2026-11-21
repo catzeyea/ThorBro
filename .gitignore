@@ -1,0 +1,7 @@
+/target
+/gen
+/tools
+/node_modules
+tauri.tools.json
+__pycache__/
+*.bak*

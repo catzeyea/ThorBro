@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=ThorBro
+GenericName=AYN Thor Manager
+Comment=Copy files and games to the AYN Thor, sync saves, mirror the screens
+Exec=thorbro
+Icon=thorbro
+Terminal=false
+Categories=Utility;
+Keywords=thor;ayn;drop;games;roms;adb;save;spielstand;sync;stream;scrcpy;
+StartupNotify=true
+StartupWMClass=thorbro
