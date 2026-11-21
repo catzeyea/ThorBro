@@ -717,7 +717,7 @@ function folderPicker(title, cands, { noneLabel = null, entryTitle = "Or type a 
       inp.placeholder = entryTitle;
       const take = () => inp.value.trim() && close({ path: inp.value.trim().replace(/\/+$/, "") });
       own.querySelector("button").onclick = take;
-      inp.onkeydown = (e) => e.key === "Enter" && take();
+      inp.onkeydown = (e) => { if (e.key === "Enter") take(); };
       body.append(own);
     }
     box.append(body);
@@ -772,7 +772,7 @@ function addWizard(initial) {
       });
     };
     foot.children[1].onclick = go;
-    inp.onkeydown = (e) => e.key === "Enter" && go();
+    inp.onkeydown = (e) => { if (e.key === "Enter") go(); };
     box.append(foot);
     setTimeout(() => inp.focus(), 0);
   }, { wide: true });
