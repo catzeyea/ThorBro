@@ -5,3 +5,7 @@
 tauri.tools.json
 __pycache__/
 *.bak*
+
+# UI test harness output
+/tests/ui/test.html
+/tests/ui/*.png
