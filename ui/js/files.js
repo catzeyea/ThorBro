@@ -186,7 +186,11 @@ function renderFiles(placeholder) {
   const list = $("#filelist");
   list.innerHTML = "";
   const lib = libAt(S.cwd);
-  const shown = S.entries.filter((entry) => !(lib && entry.name === "systeminfo.txt"));
+  $("#hide-empty-wrap").classList.toggle("hidden", !lib);
+  const hideEmpty = lib && $("#hide-empty").checked;
+  const isEmptySystem = (entry) => entry.dir && lib.systems[entry.name] && lib.systems[entry.name].count === 0;
+  const shown = S.entries.filter((entry) => !(lib && entry.name === "systeminfo.txt") && !(hideEmpty && isEmptySystem(entry)));
+  if (!shown.length && hideEmpty && S.entries.length) placeholder = "All system folders are empty (hidden by “Hide empty”)";
   // Update before the early return below, otherwise an empty folder keeps the entries of the
   // previous one and keyboard actions (arrow keys, F2, Del) would act on those.
   S.shown = shown;
@@ -196,6 +200,14 @@ function renderFiles(placeholder) {
   }
   shown.forEach((entry, i) => list.append(buildFileRow(entry, i, lib)));
 }
+
+// "Hide empty" in a games folder: remembered per PC. localStorage may be unavailable, hence try.
+try { $("#hide-empty").checked = localStorage.getItem("hideEmptySystems") === "1"; } catch (_) { /* default: off */ }
+$("#hide-empty").onchange = () => {
+  try { localStorage.setItem("hideEmptySystems", $("#hide-empty").checked ? "1" : "0"); } catch (_) { /* not remembered */ }
+  S.sel = -1;
+  renderFiles(S.entries.length ? "" : "Empty folder");
+};
 
 /** One row of the file list, with click/double-click/drag handlers. */
 function buildFileRow(entry, index, lib) {

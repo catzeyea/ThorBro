@@ -9,7 +9,7 @@
 //! `saves/`, `stream.rs` and `unpack.rs`.
 
 use crate::library::{self, Library};
-use crate::{adb, files, saves, settings, stream, systems, unpack, util};
+use crate::{adb, esde_import, files, saves, settings, stream, systems, unpack, util};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -133,6 +133,19 @@ pub fn remove_library(path: String) -> CmdResult<()> {
     let mut config = settings::load();
     config.libraries.retain(|library| *library != path);
     settings::save(&config)
+}
+
+/// "Import ES-DE info", step 1: what would be written into the games folder `path` (writes nothing).
+#[tauri::command]
+pub async fn esde_preview(path: String) -> CmdResult<Vec<esde_import::PlanItem>> {
+    run_blocking(move || esde_import::preview(&path)).await
+}
+
+/// "Import ES-DE info", step 2: writes the confirmed systeminfo.txt files / renames folders.
+/// The UI reloads the places afterwards, so renamed folders and new systems show up.
+#[tauri::command]
+pub async fn esde_import(request: esde_import::ImportRequest) -> CmdResult<Vec<esde_import::ImportResult>> {
+    run_blocking(move || esde_import::apply(&request)).await
 }
 
 /// All systems the user can pick for a folder ThorBro doesn't recognize.

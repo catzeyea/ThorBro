@@ -13,6 +13,7 @@
 mod adb;
 mod cli;
 mod commands;
+mod esde_import;
 mod files;
 mod library;
 mod saves;
@@ -43,6 +44,8 @@ fn main() {
             commands::remove_library,
             commands::known_systems,
             commands::set_folder_system,
+            commands::esde_preview,
+            commands::esde_import,
             commands::list_dir,
             commands::make_dir,
             commands::rename,
