@@ -11,9 +11,13 @@
 function modal(build, { wide = false } = {}) {
   return new Promise((resolve) => {
     const wrap = $("#modal");
-    const box = $("#modal-box");
+    // Every modal gets a fresh, empty box element. Replacing the element (instead of only
+    // clearing its content) also drops event listeners an earlier dialog attached to the box,
+    // e.g. the Enter handler of the sort dialog, which would otherwise fire again later.
+    const oldBox = $("#modal-box");
+    const box = oldBox.cloneNode(false);
+    oldBox.replaceWith(box);
     box.className = "modal" + (wide ? " wide" : "");
-    box.innerHTML = "";
     wrap.classList.remove("hidden");
     S.modalOpen = true;
     let done = false;
