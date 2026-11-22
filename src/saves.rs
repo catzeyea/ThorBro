@@ -3,7 +3,7 @@
 //! Config und Backups liegen an denselben Stellen wie beim alten Python-Script,
 //! also ~/.config/thor-save/games.json und ~/.local/share/thor-save/backups.
 
-use crate::adb::{self, posix_basename, posix_dirname, q, sh, sh_script, tcmd};
+use crate::adb::{self, posix_basename, posix_dirname, shell_quote, sh, sh_script, tcmd};
 use crate::util::{self, human, when};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -150,7 +150,7 @@ pub fn thor_snapshot(path: Option<&str>) -> Option<Snap> {
         &format!(
             "cd {} 2>/dev/null || {{ echo NOPE; exit 0; }}; find . -type f -exec md5sum {{}} + 2>/dev/null; \
              echo ===; find . -type f -exec stat -c '%Y %s %n' {{}} + 2>/dev/null",
-            q(path)
+            shell_quote(path)
         ),
     ))
     .stdout;
@@ -406,13 +406,13 @@ fn thor_stats(paths: &[String], files_too: bool) -> Vec<(String, u64, f64)> {
                 "d={}; if [ -d \"$d\" ]; then n=$(find \"$d\" -type f 2>/dev/null | wc -l); \
                  t=$(find \"$d\" -type f -exec stat -c %Y {{}} + 2>/dev/null | sort -n | tail -1); \
                  else n=1; t=$(stat -c %Y \"$d\"); fi; echo \"$n|${{t:-0}}|$d\"",
-                q(p)
+                shell_quote(p)
             )
         } else {
             format!(
                 "d={}; n=$(find \"$d\" -type f 2>/dev/null | wc -l); \
                  t=$(find \"$d\" -type f -exec stat -c %Y {{}} + 2>/dev/null | sort -n | tail -1); echo \"$n|${{t:-0}}|$d\"",
-                q(p)
+                shell_quote(p)
             )
         };
         script += &tcmd(p, &body);
@@ -433,8 +433,8 @@ fn thor_stats(paths: &[String], files_too: bool) -> Vec<(String, u64, f64)> {
 
 pub fn scan_thor(game: &str) -> Vec<Cand> {
     let toks = tokens(game);
-    let prune = THOR_PRUNE.iter().map(|n| format!("-name {}", q(n))).collect::<Vec<_>>().join(" -o ");
-    let roots = thor_roots().iter().map(|r| q(&format!("{r}/"))).collect::<Vec<_>>().join(" ");
+    let prune = THOR_PRUNE.iter().map(|n| format!("-name {}", shell_quote(n))).collect::<Vec<_>>().join(" -o ");
+    let roots = thor_roots().iter().map(|r| shell_quote(&format!("{r}/"))).collect::<Vec<_>>().join(" ");
     let out = sh(&format!("find {roots} -maxdepth {THOR_MAX_DEPTH} \\( {prune} \\) -prune -o -type d -print 2>/dev/null")).stdout;
     let mut found: Vec<String> = Vec::new();
     for line in out.lines().map(String::from).chain(private_dirs()) {
@@ -592,7 +592,7 @@ pub fn pull_dir(remote: &str, dest: &Path) -> Result<(), String> {
     let res = (|| {
         if adb::private_pkg(remote).is_some() {
             let parent = posix_dirname(remote);
-            untar_from_thor(&tcmd(remote, &format!("tar -cf - -C {} {}", q(parent), q(&name))), &tmp)?;
+            untar_from_thor(&tcmd(remote, &format!("tar -cf - -C {} {}", shell_quote(parent), shell_quote(&name))), &tmp)?;
         } else {
             let o = adb::run(&["pull", "-a", remote, &tmp.to_string_lossy()]);
             if !o.ok {
@@ -634,15 +634,15 @@ fn push_private(local: &Path, stage: &str) -> Result<(), String> {
         if !o.ok {
             return Err(format!("adb push failed:\n{}", o.err_text()));
         }
-        sh(&format!("chmod 644 {}", q(remote_tar)));
-        let o = sh(&tcmd(stage, &format!("rm -rf {s} && mkdir -p {s} && tar -xf {t} -C {s} && echo OK", s = q(stage), t = q(remote_tar))));
+        sh(&format!("chmod 644 {}", shell_quote(remote_tar)));
+        let o = sh(&tcmd(stage, &format!("rm -rf {s} && mkdir -p {s} && tar -xf {t} -C {s} && echo OK", s = shell_quote(stage), t = shell_quote(remote_tar))));
         if !o.stdout.contains("OK") {
-            sh(&tcmd(stage, &format!("rm -rf {}", q(stage))));
+            sh(&tcmd(stage, &format!("rm -rf {}", shell_quote(stage))));
             return Err(format!("Extracting via run-as failed:\n{}", o.err_text()));
         }
         Ok(())
     })();
-    sh(&format!("rm -f {}", q(remote_tar)));
+    sh(&format!("rm -f {}", shell_quote(remote_tar)));
     res
 }
 
@@ -655,7 +655,7 @@ pub fn push_dir(local: &Path, remote: &str) -> Result<(), String> {
         push_private(local, &stage)?;
         let o = sh(&tcmd(remote, &format!(
             "test -d {i} && rm -rf {r} && mv {i} {r} && rmdir {s} && echo OK",
-            i = q(&inner), r = q(remote), s = q(&stage)
+            i = shell_quote(&inner), r = shell_quote(remote), s = shell_quote(&stage)
         )));
         if !o.stdout.contains("OK") {
             return Err(format!("Couldn't move the new save into place on the Thor:\n{}\nThe new save may still be in {stage}", o.stderr));
@@ -665,19 +665,19 @@ pub fn push_dir(local: &Path, remote: &str) -> Result<(), String> {
     // adbd darf ab Android 11 keine Ordner unter Android/data anlegen, die Shell schon.
     // Also erst nach /data/local/tmp pushen, dann per cp rüber.
     let tmp = "/data/local/tmp/thor-save-push";
-    sh(&format!("rm -rf {s} {t}; mkdir -p {s} {t}", s = q(&stage), t = q(tmp)));
+    sh(&format!("rm -rf {s} {t}; mkdir -p {s} {t}", s = shell_quote(&stage), t = shell_quote(tmp)));
     let o = adb::run(&["push", &local.to_string_lossy(), &format!("{tmp}/")]);
     if !o.ok {
-        sh(&format!("rm -rf {} {}", q(&stage), q(tmp)));
+        sh(&format!("rm -rf {} {}", shell_quote(&stage), shell_quote(tmp)));
         return Err(format!("adb push failed:\n{}", o.err_text()));
     }
     let src = format!("{tmp}/{lname}");
-    let o = sh(&format!("cp -r --preserve=t {} {}/ && echo OK; rm -rf {}", q(&src), q(&stage), q(tmp)));
+    let o = sh(&format!("cp -r --preserve=t {} {}/ && echo OK; rm -rf {}", shell_quote(&src), shell_quote(&stage), shell_quote(tmp)));
     if !o.stdout.contains("OK") {
-        sh(&format!("rm -rf {}", q(&stage)));
+        sh(&format!("rm -rf {}", shell_quote(&stage)));
         return Err(format!("Copying on the Thor failed:\n{}", o.err_text()));
     }
-    let o = sh(&format!("rm -rf {r} && mv {i} {r} && rmdir {s} && echo OK", r = q(remote), i = q(&inner), s = q(&stage)));
+    let o = sh(&format!("rm -rf {r} && mv {i} {r} && rmdir {s} && echo OK", r = shell_quote(remote), i = shell_quote(&inner), s = shell_quote(&stage)));
     if !o.stdout.contains("OK") {
         return Err(format!("Couldn't move the new save into place on the Thor:\n{}\nThe new save is still in {stage}", o.stderr));
     }
@@ -687,11 +687,11 @@ pub fn push_dir(local: &Path, remote: &str) -> Result<(), String> {
 /// Paketname, wenn der Emulator für diesen Pfad gerade auf dem Thor läuft.
 pub fn thor_running_pkg(path: Option<&str>) -> Option<String> {
     let pkg = adb::thor_pkg(path?)?;
-    if sh(&format!("pidof {}", q(&pkg))).stdout.trim().is_empty() { None } else { Some(pkg) }
+    if sh(&format!("pidof {}", shell_quote(&pkg))).stdout.trim().is_empty() { None } else { Some(pkg) }
 }
 
 pub fn stop_thor_pkg(pkg: &str) {
-    sh(&format!("am force-stop {}", q(pkg)));
+    sh(&format!("am force-stop {}", shell_quote(pkg)));
 }
 
 // --- Sync ----------------------------------------------------------------------------------
@@ -776,7 +776,7 @@ pub fn run_sync(game: &str, cfg: &GameCfg, target: &str, stop_pkg: Option<&str>)
         r?;
         pc_snapshot(Some(&pc_path))
     } else {
-        sh(&tcmd(&thor_path, &format!("mkdir -p {}", q(posix_dirname(&thor_path)))));
+        sh(&tcmd(&thor_path, &format!("mkdir -p {}", shell_quote(posix_dirname(&thor_path)))));
         push_dir(Path::new(&pc_path), &thor_path)?;
         thor_snapshot(Some(&thor_path))
     };
@@ -880,7 +880,7 @@ fn extract_archive(archive: &Path, dest: &Path) -> Result<(), String> {
 /// Datei/Ordner vom Thor nach dest_dir holen. Bei Ordnern nur Dateien unter IMPORT_MAX_FILE.
 fn fetch_thor_source(remote: &str, dest_dir: &Path) -> Result<PathBuf, String> {
     let remote = remote.trim_end_matches('/');
-    let kind = sh(&format!("if [ -d {r} ]; then echo D; elif [ -f {r} ]; then echo F; fi", r = q(remote))).stdout.trim().to_string();
+    let kind = sh(&format!("if [ -d {r} ]; then echo D; elif [ -f {r} ]; then echo F; fi", r = shell_quote(remote))).stdout.trim().to_string();
     let name = posix_basename(remote);
     let local = dest_dir.join(if name.is_empty() { "thor" } else { name });
     match kind.as_str() {
@@ -893,7 +893,7 @@ fn fetch_thor_source(remote: &str, dest_dir: &Path) -> Result<PathBuf, String> {
         "D" => {
             fs::create_dir_all(&local).map_err(|e| e.to_string())?;
             untar_from_thor(
-                &format!("cd {} && find . -type f -size -{}k | tar -cf - -T -", q(remote), IMPORT_MAX_FILE / 1024),
+                &format!("cd {} && find . -type f -size -{}k | tar -cf - -T -", shell_quote(remote), IMPORT_MAX_FILE / 1024),
                 &local,
             )?;
         }
@@ -1209,7 +1209,7 @@ pub fn import_save(game: &str, src_dir: &Path, targets: &[String], merge: bool, 
                     util::mirror(&final_, Path::new(&path))?;
                     pc_snapshot(Some(&path))
                 } else {
-                    sh(&tcmd(&path, &format!("mkdir -p {}", q(posix_dirname(&path)))));
+                    sh(&tcmd(&path, &format!("mkdir -p {}", shell_quote(posix_dirname(&path)))));
                     push_dir(&final_, &path)?;
                     thor_snapshot(Some(&path))
                 };
@@ -1239,7 +1239,7 @@ pub fn scan_thor_sources(game: &str) -> Vec<Cand> {
     let toks = tokens(game);
     let mut roots = vec!["/sdcard/Download".to_string(), "/sdcard/Documents".to_string()];
     roots.extend(thor_roots().into_iter().filter(|r| r != "/sdcard"));
-    let rq = roots.iter().map(|r| q(&format!("{r}/"))).collect::<Vec<_>>().join(" ");
+    let rq = roots.iter().map(|r| shell_quote(&format!("{r}/"))).collect::<Vec<_>>().join(" ");
     let out = sh(&format!("find {rq} -maxdepth 5 \\( -name Android -o -name sdmc -o -name nand \\) -prune -o \\( -type d -o -type f \\) -print 2>/dev/null")).stdout;
     let mut found: Vec<(String, usize)> = Vec::new();
     for line in out.lines() {

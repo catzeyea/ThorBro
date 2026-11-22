@@ -1,6 +1,6 @@
 //! Dateimanager für den Thor und die Kopier-Warteschlange PC -> Thor.
 
-use crate::adb::{self, q, sh};
+use crate::adb::{self, shell_quote, sh};
 use crate::util::human;
 use crate::unpack;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ pub struct Entry {
 }
 
 pub fn listdir(path: &str) -> Result<Vec<Entry>, String> {
-    let out = sh(&format!("cd {} && stat -c '%F|%s|%n' -- * .[!.]* 2>/dev/null", q(path)));
+    let out = sh(&format!("cd {} && stat -c '%F|%s|%n' -- * .[!.]* 2>/dev/null", shell_quote(path)));
     let mut items: Vec<Entry> = out
         .stdout
         .lines()
@@ -37,18 +37,18 @@ fn check(o: adb::Out) -> Result<(), String> {
 }
 
 pub fn mkdir(path: &str) -> Result<(), String> {
-    check(sh(&format!("mkdir -p {}", q(path))))
+    check(sh(&format!("mkdir -p {}", shell_quote(path))))
 }
 
 pub fn rename(from: &str, to: &str) -> Result<(), String> {
-    check(sh(&format!("mv -- {} {}", q(from), q(to))))
+    check(sh(&format!("mv -- {} {}", shell_quote(from), shell_quote(to))))
 }
 
 pub fn delete(path: &str) -> Result<(), String> {
     if path.trim_end_matches('/').matches('/').count() < 2 {
         return Err("I'd rather not delete that (too high up in the file system).".into());
     }
-    check(sh(&format!("rm -rf -- {}", q(path))))
+    check(sh(&format!("rm -rf -- {}", shell_quote(path))))
 }
 
 pub fn pull_dir() -> PathBuf {
@@ -147,7 +147,7 @@ fn status(app: &AppHandle, text: String, detail: String, fraction: f64) {
 
 /// Größe einer Datei/eines Ordners auf dem Thor (für den Fortschritt).
 fn remote_size(path: &str) -> u64 {
-    sh(&format!("du -sk {} 2>/dev/null | cut -f1", q(path))).stdout.trim().parse::<u64>().unwrap_or(0) * 1024
+    sh(&format!("du -sk {} 2>/dev/null | cut -f1", shell_quote(path))).stdout.trim().parse::<u64>().unwrap_or(0) * 1024
 }
 
 /// Eine Datei/einen Ordner per adb push nach dest/<name> schieben, mit Fortschritt.
@@ -158,7 +158,7 @@ fn push_one(app: &AppHandle, src: &Path, dest: &str, more: &str) -> Result<(), S
     let total = size_of(src).max(1);
     let target = format!("{}/{}", dest.trim_end_matches('/'), tname);
     status(app, format!("Copying {tname} ({})", human(total)), format!("to {dest}{more}"), 0.0);
-    let _ = sh(&format!("mkdir -p {}", q(dest)));
+    let _ = sh(&format!("mkdir -p {}", shell_quote(dest)));
     let push_to = if src.is_dir() { format!("{}/", dest.trim_end_matches('/')) } else { target.clone() };
     // Ordner mit ungültigem Namen: unter neuem Namen hochladen geht bei adb nur über den Zielordner
     let (push_src, _tmp) = if src.is_dir() && tname != name {
@@ -307,7 +307,7 @@ fn worker(app: AppHandle, queue: SharedQueue) {
         let _ = sh(&format!(
             "find {} -type f -newer /proc/self 2>/dev/null | head -n 2000 | while read -r f; do \
              am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d \"file://$f\" >/dev/null; done",
-            q(d)
+            shell_quote(d)
         ));
     }
     let where_ = if dests.len() == 1 { dests.iter().next().cloned().unwrap_or_default() } else { format!("{} folders", dests.len()) };
@@ -343,7 +343,7 @@ pub fn drag_cleanup() {
 
 /// Fingerabdruck einer Datei/eines Ordners auf dem Thor: Änderungszeit + Größe.
 fn remote_stamp(path: &str) -> String {
-    let o = sh(&format!("stat -c '%Y' -- {p} 2>/dev/null; du -sk -- {p} 2>/dev/null | cut -f1", p = q(path)));
+    let o = sh(&format!("stat -c '%Y' -- {p} 2>/dev/null; du -sk -- {p} 2>/dev/null | cut -f1", p = shell_quote(path)));
     o.stdout.split_whitespace().collect::<Vec<_>>().join("|")
 }
 

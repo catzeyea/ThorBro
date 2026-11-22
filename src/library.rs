@@ -3,7 +3,7 @@
 //! Welche Endung zu welchem System gehört, steht in den `systeminfo.txt` von ES-DE
 //! auf dem Thor. Dazu kommen Header-Checks und die Title-ID bei Switch-Dateien.
 
-use crate::adb::{q, sh};
+use crate::adb::{shell_quote, sh};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
@@ -50,7 +50,7 @@ pub fn find_libraries(stores: &[(String, String)]) -> Vec<Library> {
             "cd {} 2>/dev/null || exit 1; echo @@DIRS; ls -1p | grep '/$'; \
              echo @@INFO; grep -A1 -e '^Full system name' -e '^Supported file ext' */systeminfo.txt; \
              echo @@COUNTS; find . -mindepth 2 -maxdepth 2 ! -name systeminfo.txt | cut -d/ -f2 | sort | uniq -c",
-            q(&lib_path)
+            shell_quote(&lib_path)
         ))
         .stdout;
         if !out.contains("@@DIRS") {
