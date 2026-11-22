@@ -7,7 +7,7 @@
 //! 3. `check_root`        – optional: the user picked another sub-folder, rate that one.
 //! 4. `import_save`       – back up each target, write the save, verify.
 //!
-//! `main.rs` deletes the work folder afterwards (`cleanup_import`).
+//! `commands.rs` deletes the work folder afterwards (`cleanup_import`).
 
 use super::config::{get_game, state_dir, GameCfg};
 use super::import_package::{clean_import, ext_lower, extract_archive, fetch_thor_source, is_archive, JUNK_EXT, ROM_EXT};

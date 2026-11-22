@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
-/// Event name for progress texts during save scans / imports (`app.js` shows them in a dialog).
+/// Event name for progress texts during save scans / imports (`ui/js/saves-*.js` show them in a dialog).
 const SAVE_STEP_EVENT: &str = "save-step";
 
 /// Event sent when a drag-out started by `drag_start` has ended (payload: dropped yes/no).

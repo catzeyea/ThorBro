@@ -3,7 +3,7 @@
 //! The list is stored as JSON in `~/.config/thor-save/games.json` (same file as the old Python
 //! script). This file also knows the data folder for backups and temporary work folders.
 //!
-//! Used by every other file in `saves/` and by `main.rs` (adding/removing games, opening backups).
+//! Used by every other file in `saves/` and by `commands.rs` (adding/removing games, opening backups).
 
 use super::cached_regex;
 use regex::Regex;

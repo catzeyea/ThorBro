@@ -14,11 +14,11 @@
 //! - `import_package` – unpacking and cleaning an import package
 //! - `import_root`    – finding the folder inside the package that matches the game's save
 //!
-//! `main.rs` only uses the items re-exported below (`saves::load_games`, `saves::run_sync`, ...).
+//! `commands.rs` and `cli.rs` only use the items re-exported below (`saves::load_games`, `saves::run_sync`, ...).
 
 // `mod x;` includes the file `x.rs` from this folder as a sub-module (a bit like a C++
 // namespace that lives in its own file). Without `pub` the sub-modules are private to `saves`;
-// only what is re-exported with `pub use` is visible to `main.rs`.
+// only what is re-exported with `pub use` is visible to the rest of the crate.
 mod ai;
 mod config;
 mod import;

@@ -4,7 +4,7 @@
 //! Which file extension belongs to which system is read from ES-DE's `systeminfo.txt` files on
 //! the Thor. On top of that come header checks (magic bytes) and the title ID in Switch file names.
 //!
-//! Used by `main.rs`: `places` / `refresh_libs` call `find_libraries`, `classify` calls
+//! Used by `commands.rs`: `places` / `refresh_libs` call `find_libraries`, `classify` calls
 //! `classify` for every dropped file. Talks to the Thor through `adb.rs`.
 
 use crate::adb::{sh, shell_quote};

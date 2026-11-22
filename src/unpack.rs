@@ -5,7 +5,7 @@
 //! All file names are made FAT/exFAT-safe, because the Thor's SD card rejects names like `a:b`.
 //!
 //! Used by `files.rs` (the copy queue extracts before pushing, and uses `safe_name` for every
-//! upload) and by `main.rs` (`classify` checks `is_archive` / `file_count` for dropped files).
+//! upload) and by `commands.rs` (`classify` checks `is_archive` / `file_count` for dropped files).
 
 use std::fs::File;
 use std::io::{self, BufWriter, Read, Write};

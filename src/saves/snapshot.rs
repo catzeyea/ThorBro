@@ -4,7 +4,7 @@
 //! and whether a copy really arrived intact. On the PC files are hashed in Rust, on the Thor
 //! with `md5sum` / `stat` in one shell call.
 //!
-//! Used by `sync.rs`, `import.rs` and `main.rs` (`peek` shows what's inside a folder).
+//! Used by `sync.rs`, `import.rs` and `commands.rs` (`peek` shows what's inside a folder).
 
 use super::cached_regex;
 use crate::adb::{sh, shell_quote, tcmd};

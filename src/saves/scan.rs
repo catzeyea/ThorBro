@@ -4,7 +4,7 @@
 //! folder (`save`, `memcard`, ...) or matches a known emulator layout (Switch title IDs, 3DS,
 //! Steam `userdata/.../remote`). The results are ranked and later shown to the user / the AI.
 //!
-//! Used by `main.rs` (`scan_game`) and `import.rs` (`thor_stats`, `thor_roots`).
+//! Used by `commands.rs` (`scan_game`) and `import.rs` (`thor_stats`, `thor_roots`).
 
 use super::{cached_regex, save_re, tokens};
 use crate::adb::{self, sh, sh_script, shell_quote, tcmd};

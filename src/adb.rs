@@ -5,7 +5,7 @@
 //! `PATH` and in the usual Android SDK folders, so it also works on Windows without setup.
 //!
 //! Used by `files.rs` (file manager, copy queue), `library.rs` (finding game folders),
-//! `saves/` (save sync), `stream.rs` (scrcpy gets the same adb) and `main.rs` (device status).
+//! `saves/` (save sync), `stream.rs` (scrcpy gets the same adb) and `commands.rs` (device status).
 
 use std::io::Write;
 use std::path::PathBuf;

@@ -5,7 +5,7 @@
 //!    the UI can ask the user before anything is overwritten.
 //! 3. `run_sync`  – back up the target, copy, then verify with a fresh snapshot.
 //!
-//! Used by `main.rs` (Tauri commands and CLI). Builds on `snapshot.rs` and `transfer.rs`.
+//! Used by `commands.rs` (Tauri commands) and `cli.rs`. Builds on `snapshot.rs` and `transfer.rs`.
 
 use super::config::{state_dir, GameCfg};
 use super::side_label;

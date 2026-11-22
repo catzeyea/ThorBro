@@ -3,9 +3,9 @@
 //! - File manager: list, create, rename, delete, pull (all via `adb shell` / `adb pull`).
 //! - Copy queue: jobs from the UI are processed one by one on a background thread. Progress is
 //!   sent to the UI as `transfer` events (see `Progress`).
-//! - Drag out: a file is first fetched into a local cache, then `main.rs` starts a real OS drag.
+//! - Drag out: a file is first fetched into a local cache, then `commands.rs` starts a real OS drag.
 //!
-//! Called from the Tauri commands in `main.rs`. Uses `adb.rs` for all Thor access and
+//! Called from the Tauri commands in `commands.rs`. Uses `adb.rs` for all Thor access and
 //! `unpack.rs` to extract archives before uploading them.
 
 use crate::adb::{self, sh, shell_quote};
@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
-/// Name of the Tauri event that carries copy progress to the UI (`app.js` listens to it).
+/// Name of the Tauri event that carries copy progress to the UI (`ui/js/transfer.js` listens to it).
 const TRANSFER_EVENT: &str = "transfer";
 
 /// Paths with fewer slashes than this (e.g. `/sdcard`) are refused by `delete`.
@@ -167,7 +167,7 @@ pub struct Progress {
 /// - `flatten`: skip a single wrapper folder inside the archive (for games).
 /// - `remote`: `src` is on the Thor (it is fetched, extracted on the PC and pushed back).
 ///
-/// `Deserialize` generates the code that builds this struct from the JSON sent by `app.js`.
+/// `Deserialize` generates the code that builds this struct from the JSON sent by `ui/js/transfer.js`.
 /// `#[serde(default)]` means: if the field is missing in the JSON, use `false`.
 #[derive(Deserialize, Clone)]
 pub struct Job {
@@ -488,7 +488,7 @@ fn summary_text(copied: u32, failed: u32, dests: &BTreeSet<String>) -> String {
 // --- Dragging out Thor -> PC -------------------------------------------------------------------
 //
 // To drag a file out of the window, it must exist locally. It is fetched into the cache first
-// (~/.cache/thorbro/ziehen/<hash>/<name>), then `main.rs` starts a real OS drag with that file.
+// (~/.cache/thorbro/ziehen/<hash>/<name>), then `commands.rs` starts a real OS drag with that file.
 // Already fetched files are reused as long as they haven't changed on the Thor.
 
 /// Cache folder for drag-out files.

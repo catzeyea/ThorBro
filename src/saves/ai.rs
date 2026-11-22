@@ -5,7 +5,7 @@
 //! is thrown away, so the AI can only choose, never invent paths.
 //!
 //! Optional: if `claude` isn't installed, `ai_pick` returns an empty suggestion.
-//! Used by `main.rs` (`scan_game`).
+//! Used by `commands.rs` (`scan_game`).
 
 use super::scan::Cand;
 use crate::adb;

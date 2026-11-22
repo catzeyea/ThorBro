@@ -3,8 +3,8 @@
 //! Each screen is a separate scrcpy process. `Streams` keeps track of the running processes so
 //! the UI can show which screens are open and close them again.
 //!
-//! Used by `main.rs` (Tauri commands `stream_start` / `stream_stop` / `stream_status`, the CLI
-//! command `thorbro stream`, and closing all windows when ThorBro exits). Uses `adb.rs` so scrcpy
+//! Used by `commands.rs` (Tauri commands `stream_start` / `stream_stop` / `stream_status`), `cli.rs`
+//! (`thorbro stream`) and `main.rs` (closing all windows when ThorBro exits). Uses `adb.rs` so scrcpy
 //! talks to the same adb as ThorBro, and `util::which` to find scrcpy.
 
 use std::process::Child;
