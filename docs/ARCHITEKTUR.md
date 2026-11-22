@@ -2,6 +2,7 @@
 
 Diese Seite erklärt, wie ThorBro aufgebaut ist und wie Oberfläche und Rust-Backend
 zusammenspielen. Sie richtet sich an Leute, die C++ kennen, aber neu in Rust und Tauri sind.
+(Eine englische Fassung steht in [ARCHITECTURE.md](ARCHITECTURE.md).)
 
 ## Überblick
 
@@ -168,6 +169,7 @@ System auf das Fenster gezogen werden (`transfer.js`).
    ausgewertet:
    - adb nicht startbar → „adb not found …“
    - keine Zeile → „No Thor found …“
+   - mehr als ein Gerät → „More than one Android device found …“
    - Status `unauthorized` → „Confirm the USB debugging prompt …“
    - Status `device` → verbunden. Der Modellname kommt aus `adb shell getprop ro.product.model`.
 5. **Antwort.** Das Ergebnis `Device { connected, message }` wird zu JSON

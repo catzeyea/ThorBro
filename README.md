@@ -203,7 +203,7 @@ The Rust backend lives in `src/` (Tauri 2). The UI is plain HTML/CSS/JS in `ui/`
 | `src/stream.rs` | launching scrcpy |
 | `ui/js/` | the UI scripts (loaded in order by `ui/index.html`) |
 
-A longer walkthrough (in German) is in [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md).
+A longer walkthrough is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (German version: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md)).
 
 ### Releasing a new version
 

@@ -4,7 +4,7 @@
 //! Tauri window: registers the state (`commands::AppState`), all commands the UI may call
 //! (`generate_handler!`) and closes the mirroring windows when the app exits.
 //!
-//! The UI lives in `ui/` (HTML/CSS/JS); see `docs/ARCHITEKTUR.md` for the overall picture.
+//! The UI lives in `ui/` (HTML/CSS/JS); see `docs/ARCHITECTURE.md` for the overall picture.
 
 // On Windows release builds: don't open a console window next to the app.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
