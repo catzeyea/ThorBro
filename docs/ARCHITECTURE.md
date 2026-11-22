@@ -39,6 +39,7 @@ For screen mirroring it starts `scrcpy`.
 | `files.rs` | File manager (list, rename, delete, fetch), copy queue PC → Thor with progress, dragging Thor → PC through a cache. |
 | `library.rs` | Finding ES-DE `ROMs` folders and assigning dropped files to a system (Switch title ID, header bytes, file extension). |
 | `systems.rs` | Built-in list of known systems (aliases, extensions) for folders without ES-DE `systeminfo.txt`. |
+| `esde_import.rs` | "Import ES-DE info": preview and write ES-DE `systeminfo.txt` files (one place for the format), optional case-only renames to ES-DE folder names. |
 | `settings.rs` | `<config dir>/thorBro/settings.json` (`%APPDATA%`, `~/Library/Application Support`, `~/.config`): custom game library folders and systems picked per folder. |
 | `unpack.rs` | Extracting archives (zip/7z/tar in Rust, otherwise external 7z/bsdtar/unrar), making file names FAT-safe. |
 | `stream.rs` | Starting and stopping the scrcpy windows for the top and bottom screen. |

@@ -25,6 +25,7 @@
       <select id="place" aria-label="Location"></select>
       <button class="icon" id="up" title="Up one folder (Backspace)">↑</button>
       <div class="crumbs" id="crumbs"></div>
+      <label class="toggle hidden" id="hide-empty-wrap" title="Hide system folders without games in this games folder"><input type="checkbox" id="hide-empty"> Hide empty</label>
       <button class="icon" id="reload" title="Reload (F5)">⟳</button>
     </div>
     <div class="lib-hint hidden" id="no-lib">
@@ -40,6 +41,7 @@
       <button id="btn-pull" title="Or just drag an entry out of the list onto your desktop or file manager">Copy to PC</button>
       <button id="btn-unpack" title="Extract an archive (zip, 7z, rar …) on the Thor into the same folder">Extract</button>
       <button id="btn-set-lib" title="Use the selected folder (or the open one) as games folder">Set games folder</button>
+      <button id="btn-esde" title="Write ES-DE systeminfo.txt files into the system folders of a games folder (with preview)">Import ES-DE info</button>
       <span class="spacer"></span>
       <button id="btn-send-files" class="primary">Send files …</button>
       <button id="btn-send-dirs">Send folders …</button>
@@ -94,6 +96,7 @@
   <script src="js/dialogs.js"></script>
   <script src="js/device.js"></script>
   <script src="js/files.js"></script>
+  <script src="js/esde.js"></script>
   <script src="js/transfer.js"></script>
   <script src="js/saves.js"></script>
   <script src="js/saves-setup.js"></script>
