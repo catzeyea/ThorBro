@@ -3,7 +3,7 @@
 // All real work happens in Rust (src/commands.rs); the UI only displays it. The JS is split
 // into plain <script> files (no bundler, no modules). They share one global scope and are
 // loaded in this order by index.html:
-//   core.js → dialogs.js → device.js → files.js → esde.js → transfer.js → saves.js →
+//   core.js → dialogs.js → device.js → files.js → files-actions.js → esde.js → transfer.js → saves.js →
 //   saves-setup.js → saves-import.js → stream.js → main.js
 // Code that runs immediately at load time may only use names from the same or earlier files.
 // Inside functions, any name works, because those run later.
@@ -52,6 +52,9 @@ const dirname = (path) => {
   return slash <= 0 ? "/" : trimmed.slice(0, slash);
 };
 
+/** Thor path of `name` inside the folder `dir` ("/" + "a" → "/a", "/x" + "a" → "/x/a"). */
+const joinPath = (dir, name) => (dir === "/" ? `/${name}` : `${dir}/${name}`);
+
 /** Creates one DOM element from an HTML string. */
 function el(html) {
   const template = document.createElement("template");
@@ -71,7 +74,8 @@ const S = {
   root: "/sdcard",  // root of the selected location
   cwd: "/sdcard",   // current folder in the file manager
   entries: [],      // folder listing (from commands::list_dir)
-  sel: -1,          // selected row index
+  shown: [],        // entries as displayed (filtered and sorted, see files.js deriveShown)
+  sel: -1,          // index in `shown` of the focused row if it is selected, else -1 (more in files.js FM)
   busyTransfer: false,
   modalOpen: false,
   importTarget: null, // set while the import dialog is open: it receives dropped files

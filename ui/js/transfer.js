@@ -169,13 +169,20 @@ T.event.listen("transfer", async ({ payload: progress }) => {
   if (!progress.busy) await onTransferFinished(progress);
 });
 
-/** After a batch: toast, refresh game counts, reload the current folder if it was a target. */
+/**
+ * After a batch: toast, refresh game counts, refresh the open folder in the background (keyed
+ * diff, so nothing flickers). A copy job may also have removed its source (move across storages),
+ * so the open folder is refreshed after every copy batch, not only when it was the target.
+ */
 async function onTransferFinished(progress) {
   if (progress.error) toast(progress.error, true);
   else toast(progress.text);
+  if (progress.dests.length) {
+    for (const dest of progress.dests) DIR_CACHE.delete(dest);
+    refreshCurrent();
+  }
   await refreshLibs(); // game counts changed
-  const touchesCwd = (dest) => dest === S.cwd || dirname(dest) === S.cwd || dest.startsWith(S.cwd + "/");
-  if (progress.dests.some(touchesCwd)) go(S.cwd);
+  if (progress.dests.length) renderFiles();
   setTimeout(() => { if (!$("#dropzone").classList.contains("hidden")) $("#progress").classList.add("hidden"); }, 6000);
 }
 
