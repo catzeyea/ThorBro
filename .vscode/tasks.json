@@ -1,0 +1,22 @@
+{
+"version": "2.0.0",
+"tasks": [
+{
+"label": "ThorBro: bauen",
+"type": "shell",
+"command": "cargo build",
+"group": "build",
+"problemMatcher": ["$rustc"]
+},
+{
+"label": "ThorBro: bauen und starten",
+"type": "shell",
+"command": "cargo run",
+"group": {
+"kind": "build",
+"isDefault": true
+},
+"problemMatcher": ["$rustc"]
+}
+]
+}
