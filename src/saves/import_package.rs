@@ -13,12 +13,9 @@ use std::path::{Path, PathBuf};
 /// Files bigger than this are never part of a save (probably a ROM or video).
 pub const IMPORT_MAX_FILE: u64 = 256 * 1024 * 1024;
 
-/// How many characters of an external tool's error output are shown.
+/// How many bytes of an external tool's error output are shown.
 const MAX_ERROR_CHARS: usize = 600;
 
-const ARCHIVE_EXT: &[&str] = &[
-    ".zip", ".7z", ".rar", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2",
-];
 /// ROM / game file extensions: never part of a save.
 pub const ROM_EXT: &[&str] = &[
     ".3ds", ".cci", ".cia", ".cxi", ".3dsx", ".nsp", ".nsz", ".xci", ".xcz", ".iso", ".cso", ".chd",
@@ -40,10 +37,10 @@ pub fn ext_lower(name: &str) -> String {
     lowercase.rfind('.').map(|index| lowercase[index..].to_string()).unwrap_or_default()
 }
 
-/// True if the name ends with a known archive extension.
+/// True if the name ends with a known archive extension. Works for local and Thor paths.
+/// Uses the same extension list as the copy queue (`unpack::archive_ext`).
 pub fn is_archive(path: &str) -> bool {
-    let lowercase = path.to_lowercase();
-    ARCHIVE_EXT.iter().any(|ext| lowercase.ends_with(ext))
+    crate::unpack::archive_ext(Path::new(path)).is_some()
 }
 
 /// True for files that are certainly not part of a save.
@@ -198,6 +195,13 @@ pub fn fetch_thor_source(remote: &str, dest_dir: &Path) -> Result<PathBuf, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn archives_are_recognized_like_in_the_copy_queue() {
+        assert!(is_archive("/sdcard/Download/Zelda Save.ZIP"));
+        assert!(is_archive("save.tar.zst"));
+        assert!(!is_archive("/sdcard/Download/save.sav"));
+    }
 
     #[test]
     fn tail_never_cuts_inside_a_character() {
