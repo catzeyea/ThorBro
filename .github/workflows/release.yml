@@ -71,7 +71,7 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
-          Set-Content tauri.tools.json '{ "bundle": { "resources": ["tools/*"] } }'
+          Set-Content tauri.tools.json '{ "bundle": { "resources": ["tools/*", "LICENSE", "THIRD-PARTY-NOTICES.txt"] } }'
           npx --yes @tauri-apps/cli@2 build --bundles nsis --config tauri.tools.json
 
       - name: Pack portable ZIP
@@ -82,6 +82,7 @@ jobs:
           New-Item -ItemType Directory $dir | Out-Null
           Copy-Item target\release\thorbro.exe "$dir\ThorBro.exe"
           Copy-Item tools $dir -Recurse
+          Copy-Item LICENSE, THIRD-PARTY-NOTICES.txt $dir
           Compress-Archive $dir "$dir.zip"
 
       - name: Upload
