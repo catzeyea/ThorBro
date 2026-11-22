@@ -27,6 +27,11 @@
       <div class="crumbs" id="crumbs"></div>
       <button class="icon" id="reload" title="Reload (F5)">⟳</button>
     </div>
+    <div class="lib-hint hidden" id="no-lib">
+      <span><b>No games folder found.</b> ThorBro looks for a <code>ROMs</code> folder on every storage.
+        If your games are somewhere else (e.g. <code>/sdcard/lisu/Roms</code>), open or select that folder below.</span>
+      <button class="primary" id="btn-lib-hint">Set games folder</button>
+    </div>
     <div class="list" id="filelist" tabindex="0"></div>
     <div class="actions">
       <button id="btn-mkdir">New folder</button>
@@ -34,6 +39,7 @@
       <button id="btn-delete" class="danger">Delete <kbd>Del</kbd></button>
       <button id="btn-pull" title="Or just drag an entry out of the list onto your desktop or file manager">Copy to PC</button>
       <button id="btn-unpack" title="Extract an archive (zip, 7z, rar …) on the Thor into the same folder">Extract</button>
+      <button id="btn-set-lib" title="Use the selected folder (or the open one) as games folder">Set games folder</button>
       <span class="spacer"></span>
       <button id="btn-send-files" class="primary">Send files …</button>
       <button id="btn-send-dirs">Send folders …</button>
@@ -41,7 +47,7 @@
     <div class="transfer" id="transfer">
       <div class="dropzone" id="dropzone">Drop games or files here – they land in the right folder automatically</div>
       <div class="progress hidden" id="progress">
-        <div class="ptext"><b id="p-text"></b><span id="p-detail"></span></div>
+        <div class="ptext"><b id="p-text"></b><span id="p-detail"></span><span class="spacer"></span><button class="danger hidden" id="p-cancel">Cancel</button></div>
         <div class="bar"><div id="p-bar"></div></div>
       </div>
     </div>

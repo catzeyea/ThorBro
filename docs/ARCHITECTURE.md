@@ -38,6 +38,8 @@ For screen mirroring it starts `scrcpy`.
 | `adb.rs` | Finding and calling adb, shell quoting (`shell_quote`), `run-as` for private app folders, device status, storage locations. |
 | `files.rs` | File manager (list, rename, delete, fetch), copy queue PC → Thor with progress, dragging Thor → PC through a cache. |
 | `library.rs` | Finding ES-DE `ROMs` folders and assigning dropped files to a system (Switch title ID, header bytes, file extension). |
+| `systems.rs` | Built-in list of known systems (aliases, extensions) for folders without ES-DE `systeminfo.txt`. |
+| `settings.rs` | `<config dir>/thorBro/settings.json` (`%APPDATA%`, `~/Library/Application Support`, `~/.config`): custom game library folders and systems picked per folder. |
 | `unpack.rs` | Extracting archives (zip/7z/tar in Rust, otherwise external 7z/bsdtar/unrar), making file names FAT-safe. |
 | `stream.rs` | Starting and stopping the scrcpy windows for the top and bottom screen. |
 | `util.rs` | Small helpers: formatting sizes/times, MD5, copying and mirroring folders (replacement for rsync), `which`, running a process with a timeout. |

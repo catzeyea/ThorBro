@@ -147,6 +147,13 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
 .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .meta { color: var(--dim); font-size: 12px; flex: none; }
 .row.faded { opacity: .45; }
+.row .mini { flex: none; padding: 1px 8px; font-size: 12px; }
+.lib-hint {
+  display: flex; gap: 10px; align-items: center;
+  padding: 8px 12px; border-radius: var(--radius);
+  background: var(--warn-soft); border: 1px solid var(--warn);
+}
+.lib-hint span { flex: 1; }
 .list .placeholder { padding: 40px; text-align: center; color: var(--dim); }
 .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .spacer { flex: 1; }

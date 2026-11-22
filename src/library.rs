@@ -4,10 +4,16 @@
 //! Which file extension belongs to which system is read from ES-DE's `systeminfo.txt` files on
 //! the Thor. On top of that come header checks (magic bytes) and the title ID in Switch file names.
 //!
+//! Folders without `systeminfo.txt` (not created by ES-DE, e.g. `Wii`) are identified by their
+//! name via `systems.rs`, or by a system the user picked by hand (stored in `settings.rs`).
+//! Libraries the user added in the settings are treated exactly like auto-detected ones.
+//!
 //! Used by `commands.rs`: `places` / `refresh_libs` call `find_libraries`, `classify` calls
 //! `classify` for every dropped file. Talks to the Thor through `adb.rs`.
 
 use crate::adb::{sh, shell_quote};
+use crate::settings::Settings;
+use crate::systems as known_systems;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
@@ -52,6 +58,12 @@ const MARKER_PREFIX: &str = "@@";
 /// `Clone` = `.clone()` deep copy, `Default` = an "all empty / zero" constructor.
 #[derive(Serialize, Clone, Default)]
 pub struct System {
+    /// Canonical system id (ES-DE folder name, e.g. "wii" for a folder called "Wii").
+    /// Empty if the system is unknown.
+    pub id: String,
+    /// Where the system info comes from: "systeminfo", "name" (folder name matched a known
+    /// system), "manual" (picked by the user) or "" (unknown).
+    pub origin: &'static str,
     /// Display name, e.g. "Nintendo SNES (Super Nintendo)". May be empty.
     pub full: String,
     /// Supported extensions, lowercase with dot.
@@ -60,7 +72,7 @@ pub struct System {
     pub count: u32,
 }
 
-/// An ES-DE `ROMs` folder on one storage (internal or SD card).
+/// A game library: an ES-DE `ROMs` folder on one storage, or a folder the user added.
 #[derive(Serialize, Clone)]
 pub struct Library {
     pub path: String,
@@ -69,9 +81,20 @@ pub struct Library {
     pub systems: BTreeMap<String, System>,
     /// Total number of games over all systems.
     pub total: u32,
+    /// Added by the user in the settings (can be removed again in the UI).
+    pub custom: bool,
 }
 
 impl Library {
+    /// The folder that holds the system with canonical id `id` (e.g. "wii" -> "Wii").
+    /// A folder named exactly like the id wins.
+    pub fn folder_for(&self, id: &str) -> Option<&str> {
+        let exact = self.systems.get_key_value(id).filter(|(_, system)| system.id == id);
+        exact
+            .or_else(|| self.systems.iter().find(|(_, system)| system.id == id))
+            .map(|(folder, _)| folder.as_str())
+    }
+
     /// Display name of a system, or its folder name if it has none.
     pub fn full(&self, name: &str) -> String {
         match self.systems.get(name) {
@@ -82,23 +105,69 @@ impl Library {
     }
 }
 
-/// Looks for a `ROMs` folder on every storage and reads its systems.
+/// Looks for a `ROMs` folder on every storage, adds the library folders from the settings and
+/// reads the systems of all of them.
 ///
 /// `stores` are `(label, root path)` pairs from `adb::storages()`. The result is sorted by number
 /// of games (largest first), so the "main" library is at index 0.
-pub fn find_libraries(stores: &[(String, String)]) -> Vec<Library> {
-    let mut libraries = Vec::new();
+pub fn find_libraries(stores: &[(String, String)], settings: &Settings) -> Vec<Library> {
+    let mut libraries: Vec<Library> = Vec::new();
     for (label, root) in stores {
         let library_path = format!("{root}/ROMs");
-        if let Some(systems) = list_library(&library_path) {
-            if !systems.is_empty() {
-                let total = systems.values().map(|system| system.count).sum();
-                libraries.push(Library { path: library_path, label: label.clone(), systems, total });
-            }
+        if let Some(library) = auto_library(&library_path, label, list_library(&library_path, settings)) {
+            libraries.push(library);
+        }
+    }
+    for path in &settings.libraries {
+        if libraries.iter().any(|library| &library.path == path) {
+            continue;
+        }
+        // The user picked this folder on purpose, so it is listed even without system folders
+        // yet. It is skipped only if it doesn't exist (anymore).
+        if let Some(systems) = list_library(path, settings) {
+            libraries.push(make_library(path.clone(), path.clone(), systems, true));
         }
     }
     libraries.sort_by_key(|library| std::cmp::Reverse(library.total));
     libraries
+}
+
+/// An auto-detected `ROMs` folder counts as library as soon as it has at least one sub folder,
+/// even if all of them are empty and have no `systeminfo.txt` (e.g. hand-made `wii` and `ps2`).
+fn auto_library(path: &str, label: &str, systems: Option<BTreeMap<String, System>>) -> Option<Library> {
+    let systems = systems.filter(|systems| !systems.is_empty())?;
+    Some(make_library(path.to_string(), label.to_string(), systems, false))
+}
+
+fn make_library(path: String, label: String, systems: BTreeMap<String, System>, custom: bool) -> Library {
+    let total = systems.values().map(|system| system.count).sum();
+    Library { path, label, systems, total, custom }
+}
+
+/// Fills in `id`, `origin`, name and extensions of every system folder.
+///
+/// Folders with a `systeminfo.txt` keep its data. For all others: a system picked by the user
+/// wins, then the folder name is looked up in the list of known systems. If both fail, the
+/// system stays unknown and the UI offers to pick one.
+fn resolve_systems(library_path: &str, systems: &mut BTreeMap<String, System>, settings: &Settings) {
+    for (folder, system) in systems.iter_mut() {
+        if !system.full.is_empty() || !system.exts.is_empty() {
+            system.id = folder.clone();
+            system.origin = "systeminfo";
+            continue;
+        }
+        let manual = settings.folder_systems.get(&format!("{library_path}/{folder}")).and_then(|id| known_systems::by_id(id));
+        let (known, origin) = match manual {
+            Some(known) => (Some(known), "manual"),
+            None => (known_systems::by_folder_name(folder), "name"),
+        };
+        if let Some(known) = known {
+            system.id = known.id.to_string();
+            system.origin = origin;
+            system.full = known.full.to_string();
+            system.exts = known.exts.split_whitespace().map(String::from).collect();
+        }
+    }
 }
 
 /// Reads all systems of one library with a single adb call.
@@ -108,18 +177,25 @@ pub fn find_libraries(stores: &[(String, String)]) -> Vec<Library> {
 /// - `@@DIRS`   – the system folders (`ls -1p`, folders end with `/`)
 /// - `@@INFO`   – name and extensions from every `systeminfo.txt` (via `grep -A1`)
 /// - `@@COUNTS` – number of entries per system folder (`uniq -c`)
-fn list_library(library_path: &str) -> Option<BTreeMap<String, System>> {
+fn list_library(library_path: &str, settings: &Settings) -> Option<BTreeMap<String, System>> {
     let script = format!(
         "cd {} 2>/dev/null || exit 1; echo @@DIRS; ls -1p | grep '/$'; \
          echo @@INFO; grep -A1 -e '^Full system name' -e '^Supported file ext' */systeminfo.txt; \
          echo @@COUNTS; find . -mindepth 2 -maxdepth 2 ! -name systeminfo.txt | cut -d/ -f2 | sort | uniq -c",
         shell_quote(library_path)
     );
-    let output = sh(&script).stdout;
+    systems_from_output(library_path, &sh(&script).stdout, settings)
+}
+
+/// Turns the output of the `list_library` script into resolved systems.
+/// `None` if the script didn't get past `cd` (folder missing).
+fn systems_from_output(library_path: &str, output: &str, settings: &Settings) -> Option<BTreeMap<String, System>> {
     if !output.contains("@@DIRS") {
         return None;
     }
-    Some(parse_library_listing(&output))
+    let mut systems = parse_library_listing(output);
+    resolve_systems(library_path, &mut systems, settings);
+    Some(systems)
 }
 
 /// Which part of the `list_library` output we are currently reading.
@@ -236,7 +312,7 @@ fn read_headers(path: &Path) -> Option<(Vec<u8>, Vec<u8>, u64)> {
 }
 
 /// Recognizes the system from the file header (magic bytes).
-/// Returns `(system folder name, human-readable reason)` or `None`.
+/// Returns `(canonical system id, human-readable reason)` or `None`.
 fn sniff(path: &Path) -> Option<(&'static str, &'static str)> {
     let (header, iso_descriptor, size) = read_headers(path)?;
     // `.or_else(..)` only runs the second check if the first one returned `None`.
@@ -355,7 +431,9 @@ fn rank(lib: &Library, names: impl IntoIterator<Item = String>) -> Vec<String> {
     let unique: BTreeSet<String> = names.into_iter().collect();
     let mut ranked: Vec<String> = unique.into_iter().collect();
     ranked.sort_by_key(|name| {
-        let preference = PREFERRED.iter().position(|preferred| preferred == name).unwrap_or(NOT_PREFERRED);
+        // Rank by canonical id, so a folder called "Wii" gets the preference of "wii".
+        let id = lib.systems.get(name).map(|system| system.id.as_str()).filter(|id| !id.is_empty()).unwrap_or(name);
+        let preference = PREFERRED.iter().position(|preferred| *preferred == id).unwrap_or(NOT_PREFERRED);
         let has_no_games = lib.systems.get(name).is_none_or(|system| system.count == 0);
         // Tuples compare element by element, like `std::tuple` in C++. `false < true`, so
         // systems *with* games come first.
@@ -466,26 +544,27 @@ fn classify_inner(path: &Path, lib: &Library) -> Guess {
 fn guess_switch(lib: &Library, dropped_name: &str, probe: &Probe, candidates: &[String]) -> Option<Guess> {
     let title_id = switch_id(dropped_name).or_else(|| switch_id(&probe.name))?;
     let is_switch_ext = SWITCH_EXTS.contains(&probe.ext.as_str());
-    if !lib.systems.contains_key("switch") || !(is_switch_ext || candidates.is_empty()) {
+    let switch = lib.folder_for("switch")?.to_string();
+    if !(is_switch_ext || candidates.is_empty()) {
         return None;
     }
     let tail = &title_id[title_id.len() - 4..];
     if !title_id.ends_with("000") {
         let kind = if title_id.ends_with("800") { "Update" } else { "DLC/Update" };
         return Some(Guess {
-            system: Some("switch".into()),
+            system: Some(switch.clone()),
             sub: "update".into(),
             reason: format!("Switch {kind} (title ID …{tail})"),
-            candidates: vec!["switch".into()],
+            candidates: vec![switch],
             sure: true,
             // `..Default::default()` fills all remaining fields with their default values.
             ..Default::default()
         });
     }
     Some(Guess {
-        system: Some("switch".into()),
+        system: Some(switch.clone()),
         reason: format!("Switch game (title ID …{tail})"),
-        candidates: vec!["switch".into()],
+        candidates: vec![switch],
         sure: true,
         ..Default::default()
     })
@@ -496,14 +575,12 @@ fn guess_by_header(lib: &Library, probe: &Probe, candidates: &[String]) -> Optio
     if !probe.path.is_file() || !probe.archive_ext.is_empty() {
         return None;
     }
-    let (system, why) = sniff(&probe.path)?;
-    if !lib.systems.contains_key(system) {
-        return None;
-    }
+    let (system_id, why) = sniff(&probe.path)?;
+    let system = lib.folder_for(system_id)?.to_string();
     let mut all = candidates.to_vec();
-    all.push(system.to_string());
+    all.push(system.clone());
     Some(Guess {
-        system: Some(system.into()),
+        system: Some(system),
         reason: format!("{why}{}", probe.via),
         candidates: rank(lib, all),
         sure: true,
@@ -555,5 +632,162 @@ fn guess_by_extension(lib: &Library, probe: &Probe, candidates: Vec<String>) -> 
         reason: format!("{ext} fits {} systems – please choose{via}", ranked.len()),
         candidates: ranked,
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Library as `find_libraries` builds it for a `ROMs` folder whose system folders are all
+    /// empty and have no systeminfo.txt (this is what the `list_library` script prints then).
+    fn empty_rom_library(folders: &[&str]) -> Library {
+        let mut output = String::from("@@DIRS\n");
+        for folder in folders {
+            output += &format!("{folder}/\n");
+        }
+        output += "@@INFO\n@@COUNTS\n";
+        let systems = systems_from_output("/sdcard/ROMs", &output, &Settings::default());
+        auto_library("/sdcard/ROMs", "Internal storage", systems).expect("not detected as library")
+    }
+
+    /// Creates a (sparse) file of `size` bytes with `patches` written at their offsets.
+    fn sample_file(dir: &Path, name: &str, size: u64, patches: &[(u64, &[u8])]) -> PathBuf {
+        let path = dir.join(name);
+        let mut file = File::create(&path).unwrap();
+        file.set_len(size).unwrap();
+        for (offset, bytes) in patches {
+            file.seek(SeekFrom::Start(*offset)).unwrap();
+            file.write_all(bytes).unwrap();
+        }
+        path
+    }
+
+    const MIB: u64 = 1024 * 1024;
+    const WII_MAGIC: (u64, &[u8]) = (0x18, &[0x5D, 0x1C, 0x9E, 0xA3]);
+
+    /// ISO 9660 primary volume descriptor with system id "PLAYSTATION" (PS1 / PS2 discs).
+    fn playstation_pvd() -> Vec<u8> {
+        let mut descriptor = vec![b' '; ISO_PVD_SIZE];
+        descriptor[0] = 1;
+        descriptor[1..6].copy_from_slice(b"CD001");
+        descriptor[6] = 1;
+        descriptor[8..19].copy_from_slice(b"PLAYSTATION");
+        descriptor
+    }
+
+    fn wii_iso(dir: &Path) -> PathBuf {
+        sample_file(dir, "Game.iso", MIB, &[WII_MAGIC])
+    }
+
+    /// Bigger than `PS2_MIN_ISO_SIZE`, so it counts as a DVD (PS2), not a CD (PS1).
+    fn ps2_iso(dir: &Path) -> PathBuf {
+        sample_file(dir, "Game2.iso", 900 * MIB, &[(ISO_PVD_OFFSET, &playstation_pvd())])
+    }
+
+    #[test]
+    fn empty_system_folders_without_systeminfo_are_a_library() {
+        let lib = empty_rom_library(&["ps2", "wii"]);
+        for id in ["ps2", "wii"] {
+            let system = &lib.systems[id];
+            assert_eq!((system.id.as_str(), system.origin, system.count), (id, "name", 0));
+            assert!(system.exts.contains(".iso"));
+        }
+        // No sub folders at all, or no ROMs folder: not a library.
+        let no_dirs = systems_from_output("/sdcard/ROMs", "@@DIRS\n@@INFO\n@@COUNTS\n", &Settings::default());
+        assert!(auto_library("/sdcard/ROMs", "x", no_dirs).is_none());
+        assert!(systems_from_output("/sdcard/ROMs", "", &Settings::default()).is_none());
+    }
+
+    #[test]
+    fn iso_goes_to_the_folder_named_after_its_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = empty_rom_library(&["ps2", "wii"]);
+
+        let wii = classify(&wii_iso(dir.path()), &lib);
+        assert_eq!(wii.system.as_deref(), Some("wii"));
+        assert!(wii.sure, "{}", wii.reason);
+
+        let ps2 = classify(&ps2_iso(dir.path()), &lib);
+        assert_eq!(ps2.system.as_deref(), Some("ps2"));
+        assert!(ps2.sure, "{}", ps2.reason);
+    }
+
+    #[test]
+    fn mixed_case_folder_names_get_the_header_hit() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = empty_rom_library(&["PS2", "Wii"]);
+        assert_eq!(lib.folder_for("wii"), Some("Wii"));
+
+        let wii = classify(&wii_iso(dir.path()), &lib);
+        assert_eq!((wii.system.as_deref(), wii.sure), (Some("Wii"), true));
+        let ps2 = classify(&ps2_iso(dir.path()), &lib);
+        assert_eq!((ps2.system.as_deref(), ps2.sure), (Some("PS2"), true));
+    }
+
+    #[test]
+    fn ambiguous_iso_without_header_is_an_unsure_guess() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = empty_rom_library(&["ps2", "wii"]);
+        let guess = classify(&sample_file(dir.path(), "Unknown.iso", MIB, &[]), &lib);
+        assert!(!guess.sure);
+        assert!(guess.system.is_some());
+        assert_eq!(guess.candidates.len(), 2, "{:?}", guess.candidates);
+    }
+
+    #[test]
+    fn ambiguous_bin_with_and_without_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = empty_rom_library(&["Mega Drive", "PS1"]);
+
+        // A .bin with an ISO 9660 "PLAYSTATION" descriptor (2048-byte sectors) is a PS1 game.
+        let with_header = sample_file(dir.path(), "a.bin", MIB, &[(ISO_PVD_OFFSET, &playstation_pvd())]);
+        let guess = classify(&with_header, &lib);
+        assert_eq!((guess.system.as_deref(), guess.sure), (Some("PS1"), true), "{}", guess.reason);
+
+        // Without a header both systems fit: best guess, but marked unsure.
+        let guess = classify(&sample_file(dir.path(), "b.bin", MIB, &[]), &lib);
+        assert!(!guess.sure);
+        assert_eq!(guess.system.as_deref(), Some("PS1"));
+        assert_eq!(guess.candidates, vec!["PS1".to_string(), "Mega Drive".to_string()]);
+    }
+
+    #[test]
+    fn chd_has_no_header_check_and_goes_by_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let chd = sample_file(dir.path(), "Game.chd", MIB, &[]);
+
+        // Only one of the folders reads .chd: sure.
+        let guess = classify(&chd, &empty_rom_library(&["ps2", "wii"]));
+        assert_eq!((guess.system.as_deref(), guess.sure), (Some("ps2"), true));
+
+        // Several do: unsure, all of them offered.
+        let guess = classify(&chd, &empty_rom_library(&["dreamcast", "ps2", "psx", "saturn"]));
+        assert!(!guess.sure);
+        assert_eq!(guess.candidates.len(), 4, "{:?}", guess.candidates);
+    }
+
+    #[test]
+    fn folders_without_systeminfo_are_resolved_by_name_or_settings() {
+        let listing = "@@DIRS\nWii/\nsnes/\nMy Stuff/\n@@INFO\n\
+                       snes/systeminfo.txt:Full system name:\nsnes/systeminfo.txt-Nintendo SNES\n\
+                       snes/systeminfo.txt:Supported file extensions:\nsnes/systeminfo.txt-.sfc .SMC\n\
+                       @@COUNTS\n   3 Wii\n";
+        let mut systems = parse_library_listing(listing);
+        let mut settings = Settings::default();
+        settings.folder_systems.insert("/lib/My Stuff".into(), "gba".into());
+        resolve_systems("/lib", &mut systems, &settings);
+
+        assert_eq!((systems["snes"].id.as_str(), systems["snes"].origin), ("snes", "systeminfo"));
+        assert!(systems["snes"].exts.contains(".smc"));
+        assert_eq!((systems["Wii"].id.as_str(), systems["Wii"].origin), ("wii", "name"));
+        assert!(systems["Wii"].exts.contains(".wbfs"));
+        assert_eq!(systems["Wii"].count, 3);
+        assert_eq!((systems["My Stuff"].id.as_str(), systems["My Stuff"].origin), ("gba", "manual"));
+
+        let lib = make_library("/lib".into(), "test".into(), systems, true);
+        assert_eq!(lib.folder_for("wii"), Some("Wii"));
+        assert_eq!(lib.folder_for("switch"), None);
     }
 }

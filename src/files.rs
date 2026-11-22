@@ -2,7 +2,8 @@
 //!
 //! - File manager: list, create, rename, delete, pull (all via `adb shell` / `adb pull`).
 //! - Copy queue: jobs from the UI are processed one by one on a background thread. Progress is
-//!   sent to the UI as `transfer` events (see `Progress`).
+//!   sent to the UI as `transfer` events (see `Progress`). The running job can be cancelled
+//!   (see `cancel`).
 //! - Drag out: a file is first fetched into a local cache, then `commands.rs` starts a real OS drag.
 //!
 //! Called from the Tauri commands in `commands.rs`. Uses `adb.rs` for all Thor access and
@@ -91,8 +92,39 @@ pub fn mkdir(path: &str) -> Result<(), String> {
 }
 
 /// Renames / moves a file or folder on the Thor.
+///
+/// A rename that only changes upper/lower case (`Wii` -> `wii`) is done in two steps via a
+/// temporary name. Android's shared storage (`/sdcard`, SD cards) is case-insensitive, so for
+/// `mv Wii wii` the target "already exists" and is the source itself; mv then tries to move the
+/// folder into itself and fails with `mv: bad '…/Wii': Invalid argument`. (This is the most
+/// likely explanation of a colleague's report; it is not verified on a device yet.)
 pub fn rename(from: &str, to: &str) -> Result<(), String> {
+    if !differs_only_by_case(from, to) {
+        return move_path(from, to);
+    }
+    let temp = format!("{}{CASE_RENAME_SUFFIX}", from.trim_end_matches('/'));
+    move_path(from, &temp)?;
+    if let Err(e) = move_path(&temp, to) {
+        // Roll back, so the entry doesn't stay behind under the temporary name.
+        return match move_path(&temp, from) {
+            Ok(()) => Err(e),
+            Err(rollback) => Err(format!("{e} (and moving it back failed, it is now called {temp}: {rollback})")),
+        };
+    }
+    Ok(())
+}
+
+/// Suffix for the temporary name of a case-only rename (see `rename`).
+const CASE_RENAME_SUFFIX: &str = ".thorbro-rename";
+
+/// One `mv` on the Thor.
+fn move_path(from: &str, to: &str) -> Result<(), String> {
     check(sh(&format!("mv -- {} {}", shell_quote(from), shell_quote(to))))
+}
+
+/// True if the two paths are different, but equal when upper/lower case is ignored.
+fn differs_only_by_case(from: &str, to: &str) -> bool {
+    from != to && from.to_lowercase() == to.to_lowercase()
 }
 
 /// Deletes a file or folder on the Thor (recursively, no recycle bin).
@@ -169,6 +201,10 @@ pub struct Progress {
     /// Destination folders of the finished batch (so the UI can reload them).
     pub dests: Vec<String>,
     pub error: Option<String>,
+    /// The UI may offer "Cancel" (only for copy queue jobs, not for drag-out fetches).
+    pub cancellable: bool,
+    /// A job was cancelled (on the event right after the cancel, and on the final summary).
+    pub cancelled: bool,
 }
 
 /// One copy job from the UI.
@@ -196,6 +232,22 @@ pub struct Job {
 pub struct Queue {
     jobs: VecDeque<Job>,
     busy: bool,
+    /// Set by `cancel`, read by the worker while it pushes. Reset when the next job starts.
+    cancel: bool,
+}
+
+/// Why a copy job didn't finish.
+enum JobError {
+    Failed(String),
+    /// Cancelled by the user. The text says what happened to the partial copy (may be empty).
+    Cancelled(String),
+}
+
+// Lets `?` turn a plain `String` error into `JobError::Failed`.
+impl From<String> for JobError {
+    fn from(error: String) -> Self {
+        JobError::Failed(error)
+    }
 }
 
 /// The queue as shared between the Tauri state and the worker thread.
@@ -223,19 +275,52 @@ pub fn enqueue(app: AppHandle, queue: SharedQueue, jobs: Vec<Job>) {
     }
 }
 
+/// Asks the worker to stop the running job. `clear_queue` also drops all waiting jobs.
+/// Returns `false` if no worker is running (nothing to cancel).
+pub fn cancel(queue: &SharedQueue, clear_queue: bool) -> bool {
+    let mut locked_queue = queue.lock().unwrap();
+    if !locked_queue.busy {
+        return false;
+    }
+    locked_queue.cancel = true;
+    if clear_queue {
+        locked_queue.jobs.clear();
+    }
+    true
+}
+
+fn is_cancelled(queue: &SharedQueue) -> bool {
+    queue.lock().unwrap().cancel
+}
+
 /// Sends a progress event to the UI. A failed emit (e.g. window closed) is ignored.
 fn emit_progress(app: &AppHandle, progress: Progress) {
     let _ = app.emit(TRANSFER_EVENT, progress);
 }
 
-/// Sends a "still working" progress event.
+/// Sends a "still working" progress event for a copy queue job (can be cancelled).
 fn report_busy(app: &AppHandle, text: String, detail: String, fraction: f64) {
-    emit_progress(app, Progress { busy: true, text, detail, fraction, dests: vec![], error: None });
+    emit_progress(app, busy_progress(text, detail, fraction, true));
 }
 
-/// Sends the final "done" / "failed" event.
-fn report_finished(app: &AppHandle, text: String, dests: Vec<String>, error: Option<String>) {
-    emit_progress(app, Progress { busy: false, text, detail: String::new(), fraction: 1.0, dests, error });
+fn busy_progress(text: String, detail: String, fraction: f64, cancellable: bool) -> Progress {
+    Progress { busy: true, text, detail, fraction, dests: vec![], error: None, cancellable, cancelled: false }
+}
+
+/// Sends the "this job was cancelled" event. The worker may continue with the next job.
+fn report_cancelled(app: &AppHandle, text: String, detail: String) {
+    emit_progress(app, Progress { cancelled: true, ..busy_progress(text, detail, 0.0, false) });
+}
+
+/// Sends the final "done" / "failed" / "cancelled" event.
+fn report_finished(app: &AppHandle, text: String, dests: Vec<String>, error: Option<String>, cancelled: bool) {
+    let detail = String::new();
+    emit_progress(app, Progress { busy: false, text, detail, fraction: 1.0, dests, error, cancellable: false, cancelled });
+}
+
+/// Does a file/folder exist on the Thor?
+fn remote_exists(path: &str) -> bool {
+    sh(&format!("test -e {}", shell_quote(path))).ok
 }
 
 /// Size of a file/folder on the Thor in bytes (via `du`, so rounded to KiB). `0` if unknown.
@@ -262,14 +347,33 @@ fn spawn_adb(args: &[&str]) -> std::io::Result<Child> {
 /// Waits for `child` to exit. Every `poll_interval` it calls `on_poll` (to measure and report
 /// progress), sleeping `sleep` between exit checks.
 ///
+/// If `is_cancelled` returns true, the child is killed and reaped and `true` is returned. The
+/// progress polling (`du` on the Thor) runs on this same thread, so once this function returns
+/// no further poll can happen.
+///
 /// `impl FnMut()` accepts any closure that may modify what it captured, like a template
 /// parameter `F` with `operator()` in C++.
-fn wait_with_polling(child: &mut Child, sleep: Duration, poll_interval: Duration, mut on_poll: impl FnMut()) {
+fn wait_with_polling(
+    child: &mut Child,
+    sleep: Duration,
+    poll_interval: Duration,
+    is_cancelled: impl Fn() -> bool,
+    mut on_poll: impl FnMut(),
+) -> bool {
     let mut last_poll = Instant::now();
     loop {
         match child.try_wait() {
-            Ok(Some(_)) | Err(_) => break,
+            Ok(Some(_)) | Err(_) => return false,
             Ok(None) => {}
+        }
+        if is_cancelled() {
+            // adb is started directly (no shell or cmd.exe in between), so this ends adb itself:
+            // TerminateProcess on Windows, SIGKILL on Linux/macOS. `wait` reaps it and, on
+            // Windows, guarantees adb no longer holds the source files open before the temp
+            // copy from `push_source` is deleted.
+            let _ = child.kill();
+            let _ = child.wait();
+            return true;
         }
         std::thread::sleep(sleep);
         if last_poll.elapsed() >= poll_interval {
@@ -325,7 +429,11 @@ fn push_source(src: &Path, name: &str, target_name: &str) -> Result<(PathBuf, Op
 ///
 /// The target name is made FAT-safe (no `:` etc.), otherwise the SD card refuses it.
 /// `more` is appended to the detail line (e.g. `" · 3 more waiting"`).
-fn push_one(app: &AppHandle, src: &Path, dest: &str, more: &str) -> Result<(), String> {
+/// On cancel the partial copy is removed, but only if the target didn't exist before.
+fn push_one(app: &AppHandle, queue: &SharedQueue, src: &Path, dest: &str, more: &str) -> Result<(), JobError> {
+    if is_cancelled(queue) {
+        return Err(JobError::Cancelled(String::new()));
+    }
     let name = local_name(src);
     let target_name = unpack::safe_name(&name);
     let total = size_of(src).max(1);
@@ -333,6 +441,7 @@ fn push_one(app: &AppHandle, src: &Path, dest: &str, more: &str) -> Result<(), S
     let target = format!("{dest_trimmed}/{target_name}");
     report_busy(app, format!("Copying {target_name} ({})", human(total)), format!("to {dest}{more}"), 0.0);
     let _ = sh(&format!("mkdir -p {}", shell_quote(dest)));
+    let existed_before = remote_exists(&target);
 
     // A folder is pushed *into* dest/, a file directly to its target path.
     let push_to = if src.is_dir() { format!("{dest_trimmed}/") } else { target.clone() };
@@ -344,16 +453,33 @@ fn push_one(app: &AppHandle, src: &Path, dest: &str, more: &str) -> Result<(), S
 
     // Progress: regularly check how much already arrived on the Thor.
     let started = Instant::now();
-    wait_with_polling(&mut child, PUSH_SLEEP, PUSH_POLL_INTERVAL, || {
+    let cancelled = wait_with_polling(&mut child, PUSH_SLEEP, PUSH_POLL_INTERVAL, || is_cancelled(queue), || {
         let done = remote_size(&target).min(total);
         let (detail, fraction) = transfer_detail(done, total, started);
         report_busy(app, format!("Copying {target_name}"), format!("{detail}{more}"), fraction);
     });
+    if cancelled {
+        return Err(JobError::Cancelled(clean_up_partial(&target, &target_name, existed_before)));
+    }
 
     match child.wait_with_output() {
         Ok(output) if output.status.success() => Ok(()),
-        Ok(output) => Err(transfer_error(&name, &output)),
-        Err(e) => Err(format!("{name}: {e}")),
+        Ok(output) => Err(JobError::Failed(transfer_error(&name, &output))),
+        Err(e) => Err(JobError::Failed(format!("{name}: {e}"))),
+    }
+}
+
+/// Removes a half-pushed file/folder after a cancel and says what happened.
+///
+/// If the target existed before the push, it is left alone: adb merges a folder into an existing
+/// one (and overwrites files in place), so deleting it would also delete what was there before.
+fn clean_up_partial(target: &str, target_name: &str, existed_before: bool) -> String {
+    if existed_before {
+        return format!("{target_name} existed before and was left as it is – check it, it may be incomplete");
+    }
+    match delete(target) {
+        Ok(()) => "Partial copy removed".into(),
+        Err(e) => format!("Couldn't remove the partial copy {target}: {e}"),
     }
 }
 
@@ -409,16 +535,19 @@ fn extract_with_progress(app: &AppHandle, archive: &Path, out: &Path, name: &str
 ///
 /// Returns how many entries were uploaded *and* the result. They are separate because an upload
 /// can fail halfway: the entries pushed before the error still count as copied.
-fn unpack_job(app: &AppHandle, job: &Job, more: &str) -> (u32, Result<(), String>) {
+///
+/// A cancel during fetching or extracting takes effect when the first upload would start
+/// (those steps can't be interrupted halfway).
+fn unpack_job(app: &AppHandle, queue: &SharedQueue, job: &Job, more: &str) -> (u32, Result<(), JobError>) {
     // `work` is a `TempDir`: it deletes the folder with everything in it when it is dropped at
     // the end of this function, so it must stay alive until all uploads are done.
     let (work, items) = match extract_job(app, job, more) {
         Ok(extracted) => extracted,
-        Err(e) => return (0, Err(e)),
+        Err(e) => return (0, Err(JobError::Failed(e))),
     };
     let mut uploaded = 0;
     for item in &items {
-        if let Err(e) = push_one(app, item, &job.dest, more) {
+        if let Err(e) = push_one(app, queue, item, &job.dest, more) {
             return (uploaded, Err(e));
         }
         uploaded += 1;
@@ -450,6 +579,8 @@ fn extract_job(app: &AppHandle, job: &Job, more: &str) -> Result<(tempfile::Temp
 /// `enqueue` either sees the worker still running or starts a new one, never neither.
 fn next_job(queue: &SharedQueue) -> (Option<Job>, usize) {
     let mut locked_queue = queue.lock().unwrap();
+    // A cancel only applies to the job that was running when it was requested.
+    locked_queue.cancel = false;
     let job = locked_queue.jobs.pop_front();
     if job.is_none() {
         locked_queue.busy = false;
@@ -459,7 +590,7 @@ fn next_job(queue: &SharedQueue) -> (Option<Job>, usize) {
 
 /// Background thread: processes jobs until the queue is empty, then sends a summary.
 fn worker(app: AppHandle, queue: SharedQueue) {
-    let (mut copied, mut failed) = (0u32, 0u32);
+    let (mut copied, mut failed, mut cancelled) = (0u32, 0u32, 0u32);
     let mut dests: BTreeSet<String> = BTreeSet::new();
     let mut last_error = None;
     loop {
@@ -468,22 +599,31 @@ fn worker(app: AppHandle, queue: SharedQueue) {
         dests.insert(job.dest.clone());
         let more = if waiting > 0 { format!(" · {waiting} more waiting") } else { String::new() };
         let (count, result) = if job.unpack {
-            unpack_job(&app, &job, &more)
+            unpack_job(&app, &queue, &job, &more)
         } else {
-            match push_one(&app, Path::new(&job.src), &job.dest, &more) {
+            match push_one(&app, &queue, Path::new(&job.src), &job.dest, &more) {
                 Ok(()) => (1, Ok(())),
                 Err(e) => (0, Err(e)),
             }
         };
         copied += count;
-        if let Err(e) = result {
-            failed += 1;
-            last_error = Some(e);
+        match result {
+            Ok(()) => {}
+            Err(JobError::Failed(e)) => {
+                failed += 1;
+                last_error = Some(e);
+            }
+            Err(JobError::Cancelled(note)) => {
+                cancelled += 1;
+                // `src` is a Thor path for remote jobs, a local (maybe Windows) path otherwise.
+                let name = if job.remote { adb::posix_basename(&job.src).to_string() } else { local_name(Path::new(&job.src)) };
+                report_cancelled(&app, format!("Cancelled {name}"), note);
+            }
         }
     }
     trigger_media_scan(&dests);
-    let text = summary_text(copied, failed, &dests);
-    report_finished(&app, text, dests.into_iter().collect(), last_error);
+    let text = summary_text(copied, failed, cancelled, &dests);
+    report_finished(&app, text, dests.into_iter().collect(), last_error, cancelled > 0);
 }
 
 /// Asks Android's media scanner to index new files, so pictures/music show up in apps right away.
@@ -498,8 +638,8 @@ fn trigger_media_scan(dests: &BTreeSet<String>) {
     }
 }
 
-/// `"Done: 3 copied to /sdcard/ROMs/snes, 1 failed"`.
-fn summary_text(copied: u32, failed: u32, dests: &BTreeSet<String>) -> String {
+/// `"Done: 3 copied to /sdcard/ROMs/snes, 1 failed, 1 cancelled"`.
+fn summary_text(copied: u32, failed: u32, cancelled: u32, dests: &BTreeSet<String>) -> String {
     let destination = if dests.len() == 1 {
         dests.iter().next().cloned().unwrap_or_default()
     } else {
@@ -508,6 +648,9 @@ fn summary_text(copied: u32, failed: u32, dests: &BTreeSet<String>) -> String {
     let mut text = format!("Done: {copied} copied to {destination}");
     if failed > 0 {
         text += &format!(", {failed} failed");
+    }
+    if cancelled > 0 {
+        text += &format!(", {cancelled} cancelled");
     }
     text
 }
@@ -608,7 +751,7 @@ pub fn drag_fetch(app: &AppHandle, src: &str) -> Result<Fetched, String> {
 
     std::fs::rename(&slot.part, &slot.dir).map_err(|e| e.to_string())?;
     let _ = std::fs::write(&slot.stamp_file, &stamp);
-    report_finished(app, format!("{name} is ready to drag out"), vec![], None);
+    report_finished(app, format!("{name} is ready to drag out"), vec![], None, false);
     Ok(Fetched { local: slot.local.to_string_lossy().into_owned(), fetched: true })
 }
 
@@ -616,22 +759,37 @@ pub fn drag_fetch(app: &AppHandle, src: &str) -> Result<Fetched, String> {
 /// "couldn't be fetched" event is sent.
 fn pull_with_progress(app: &AppHandle, src: &str, name: &str, part: &Path) -> Result<(), String> {
     let total = remote_size(src).max(1);
-    report_busy(app, format!("Fetching {name} from the Thor ({})", human(total)), "to drag out".into(), 0.0);
+    let report = |text: String, detail: String, fraction: f64| emit_progress(app, busy_progress(text, detail, fraction, false));
+    report(format!("Fetching {name} from the Thor ({})", human(total)), "to drag out".into(), 0.0);
     let mut child = spawn_adb(&["pull", src, &part.to_string_lossy()]).map_err(|e| format!("{name}: {e}"))?;
 
     let started = Instant::now();
-    wait_with_polling(&mut child, FETCH_SLEEP, FETCH_POLL_INTERVAL, || {
+    wait_with_polling(&mut child, FETCH_SLEEP, FETCH_POLL_INTERVAL, || false, || {
         let done = size_of(part).min(total);
         let (detail, fraction) = transfer_detail(done, total, started);
-        report_busy(app, format!("Fetching {name} from the Thor"), format!("{detail} · then drag it out"), fraction);
+        report(format!("Fetching {name} from the Thor"), format!("{detail} · then drag it out"), fraction);
     });
 
     let output = child.wait_with_output().map_err(|e| format!("{name}: {e}"))?;
     if !output.status.success() {
         let error = transfer_error(name, &output);
         let _ = std::fs::remove_dir_all(part);
-        report_finished(app, format!("{name} couldn't be fetched"), vec![], Some(error.clone()));
+        report_finished(app, format!("{name} couldn't be fetched"), vec![], Some(error.clone()), false);
         return Err(error);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn case_only_rename_is_detected() {
+        assert!(differs_only_by_case("/sdcard/lisu/Roms/Wii", "/sdcard/lisu/Roms/wii"));
+        assert!(differs_only_by_case("/sdcard/a/GBA", "/sdcard/a/gba"));
+        assert!(!differs_only_by_case("/sdcard/a/Wii", "/sdcard/a/Wii"));
+        assert!(!differs_only_by_case("/sdcard/a/Wii", "/sdcard/a/WiiU"));
+        assert!(!differs_only_by_case("/sdcard/a/Wii", "/sdcard/b/wii2"));
+    }
 }

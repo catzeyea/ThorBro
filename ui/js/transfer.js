@@ -39,12 +39,32 @@ async function incoming(paths) {
     await pollDevice(true);
     if (!S.connected) return toast("Thor is not connected", true);
   }
-  if (!S.libs.length) return enqueue(paths.map((path) => job(path, S.cwd)));
+  if (!S.libs.length) return askCopyWithoutLibrary(paths);
   // → commands::classify → library::classify per file (empty list = no game among them)
   const items = await call("classify", { paths, cwd: S.cwd, lib: 0, force: false });
   // Nothing game-like: copy straight into the current folder, as before.
   if (!items.length) return enqueue(paths.map((path) => job(path, S.cwd)));
   sortDialog(paths, items);
+}
+
+/**
+ * Without a games folder nothing can be sorted. Instead of silently copying into the current
+ * folder, ask first and offer to set up the games folder.
+ */
+async function askCopyWithoutLibrary(paths) {
+  const count = paths.length;
+  const what = count === 1 ? "this file" : `these ${count} files`;
+  const choice = await dialog({
+    title: "No games folder set up",
+    html: true,
+    body: `<p>ThorBro can't sort games without a games folder, so ${what} would go into the open folder:</p>
+      <p><b>${esc(S.cwd)}</b></p>
+      <p class="dim">To set up your games folder, cancel, open or select it in the list (e.g. /sdcard/lisu/Roms)
+      and press “Set games folder”. Or use the open folder as games folder right away.</p>`,
+    buttons: [["Cancel", null, ""], ["Use open folder as games folder", "setup", ""], ["Copy here", "copy", "primary"]],
+  });
+  if (choice === "copy") enqueue(paths.map((path) => job(path, S.cwd)));
+  if (choice === "setup" && await setGamesFolder(true)) incoming(paths);
 }
 
 // ---------------------------------------------------------------- Sort dialog
@@ -141,6 +161,7 @@ T.event.listen("transfer", async ({ payload: progress }) => {
   $("#dropzone").classList.toggle("hidden", progress.busy);
   $("#p-text").textContent = progress.text;
   $("#p-detail").textContent = progress.detail;
+  $("#p-cancel").classList.toggle("hidden", !(progress.busy && progress.cancellable));
   // fraction 0 while busy = unknown → animated bar at 30 %.
   const unknown = progress.busy && progress.fraction <= 0;
   $("#p-bar").parentElement.classList.toggle("indet", unknown);
@@ -152,12 +173,28 @@ T.event.listen("transfer", async ({ payload: progress }) => {
 async function onTransferFinished(progress) {
   if (progress.error) toast(progress.error, true);
   else toast(progress.text);
-  // → commands::refresh_libs (game counts changed)
-  S.libs = await call("refresh_libs", {}, true).catch(() => S.libs);
+  await refreshLibs(); // game counts changed
   const touchesCwd = (dest) => dest === S.cwd || dirname(dest) === S.cwd || dest.startsWith(S.cwd + "/");
   if (progress.dests.some(touchesCwd)) go(S.cwd);
   setTimeout(() => { if (!$("#dropzone").classList.contains("hidden")) $("#progress").classList.add("hidden"); }, 6000);
 }
+
+/** Cancel button next to the progress bar (only shown for copy jobs, see Progress.cancellable). */
+$("#p-cancel").onclick = async () => {
+  const choice = await dialog({
+    title: "Cancel the transfer?",
+    body: "The copy that is running is stopped and its partial copy on the Thor removed. " +
+      "If an archive is being fetched or extracted right now, it stops before uploading.",
+    buttons: [["Keep copying", null, ""], ["Cancel this one, copy the rest", "one", ""], ["Cancel everything", "all", "danger solid"]],
+    defaultValue: null,
+  });
+  if (!choice) return;
+  // → commands::cancel_transfer → files::cancel (false = nothing was running anymore)
+  if (await call("cancel_transfer", { clearQueue: choice === "all" })) {
+    $("#p-detail").textContent = "Cancelling …";
+    $("#p-cancel").classList.add("hidden");
+  }
+};
 
 // ---------------------------------------------------------------- Drag & drop onto the window
 

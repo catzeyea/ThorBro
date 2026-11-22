@@ -247,15 +247,29 @@ fn adb_missing_message() -> &'static str {
 
 /// Storage locations on the Thor as `(display name, path)`:
 /// internal storage plus every SD card / USB stick under `/storage`.
+///
+/// An entry of `/storage` only counts as SD card if its name looks like a volume ID
+/// (`XXXX-XXXX` or a UUID, which is how Android names mounted removable volumes) and it can
+/// actually be listed. Anything else (`emulated`, `self`, leftover or inaccessible mount points)
+/// is skipped silently.
 pub fn storages() -> Vec<(String, String)> {
     let mut found = vec![("Internal storage".to_string(), "/sdcard".to_string())];
-    for name in sh("ls /storage").stdout.split_whitespace() {
-        // "emulated" and "self" are aliases of the internal storage.
-        if name != "emulated" && name != "self" {
-            found.push((format!("SD card ({name})"), format!("/storage/{name}")));
-        }
+    // Prints the names of all readable entries; unreadable ones produce no output at all.
+    let output = sh("for d in /storage/*; do ls \"$d\" >/dev/null 2>&1 && echo \"${d##*/}\"; done").stdout;
+    for name in output.lines().map(str::trim).filter(|name| is_volume_id(name)) {
+        found.push((format!("SD card ({name})"), format!("/storage/{name}")));
     }
     found
+}
+
+/// True for names Android gives to removable volumes: FAT/exFAT serials like `1A2B-3C4D`, or
+/// UUIDs like `0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0` (ext4 / NTFS sticks).
+fn is_volume_id(name: &str) -> bool {
+    static VOLUME_ID_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let regex = VOLUME_ID_RE.get_or_init(|| {
+        regex::Regex::new(r"^(?:[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}|[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})$").unwrap()
+    });
+    regex.is_match(name)
 }
 
 /// Package name if `path` is inside an app's private data folder (`/data/data/<pkg>` or
@@ -301,5 +315,21 @@ pub fn posix_dirname(path: &str) -> &str {
         Some(0) => "/",
         Some(index) => &trimmed[..index],
         None => ".",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_volume_ids_count_as_sd_cards() {
+        assert!(is_volume_id("1A2B-3C4D"));
+        assert!(is_volume_id("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"));
+        assert!(!is_volume_id("emulated"));
+        assert!(!is_volume_id("self"));
+        assert!(!is_volume_id("sdcard1"));
+        assert!(!is_volume_id("1A2B-3C4"));
+        assert!(!is_volume_id(""));
     }
 }

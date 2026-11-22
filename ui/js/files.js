@@ -14,6 +14,7 @@ async function loadPlaces(restore) {
   const result = await call("places", { restore });
   S.places = result.places;
   S.libs = result.libs;
+  updateLibHint();
   const select = $("#place");
   select.innerHTML = S.places.map((place, i) => `<option value="${i}">${esc(place.label)}</option>`).join("");
   let wanted = restore ? result.start : S.cwd;
@@ -41,6 +42,96 @@ $("#place").onchange = (e) => {
 /** The game library whose root is `path`, if any. */
 function libAt(path) {
   return S.libs.find((lib) => lib.path === path);
+}
+
+/** Shows the "No games folder found" hint while there is no library. */
+function updateLibHint() {
+  $("#no-lib").classList.toggle("hidden", !S.connected || S.libs.length > 0);
+}
+
+/** Re-reads the libraries (game counts, systems) and redraws the list. */
+async function refreshLibs() {
+  // → commands::refresh_libs
+  S.libs = await call("refresh_libs", {}, true).catch(() => S.libs);
+  updateLibHint();
+}
+
+// ---------------------------------------------------------------- Games folder setup
+
+/**
+ * "Set games folder": uses the selected folder (or the open one if no folder is selected) as
+ * game library. On a folder that already is a user-added library it offers to remove it.
+ * openFolderOnly: ignore the selection and always offer the open folder.
+ * Resolves with true if a library was added.
+ */
+async function setGamesFolder(openFolderOnly = false) {
+  if (!S.connected) { toast("Thor is not connected", true); return false; }
+  const entry = !openFolderOnly && S.shown && S.shown[S.sel];
+  const path = entry && entry.dir ? `${S.cwd}/${entry.name}` : S.cwd;
+  const existing = libAt(path);
+  if (existing && !existing.custom) { toast("This folder is already used as games folder"); return false; }
+  if (existing) {
+    const choice = await dialog({
+      title: "Stop using this games folder?",
+      body: `“${path}” will no longer be used as games folder. The folder and its files stay untouched.`,
+      buttons: [["Cancel", null, ""], ["Remove", "rm", "danger solid"]],
+    });
+    if (choice !== "rm") return false;
+    await call("remove_library", { path }); // → commands::remove_library
+    toast("Games folder removed");
+    await loadPlaces(false);
+    return false;
+  }
+  const choice = await dialog({
+    title: "Use this as games folder?",
+    html: true,
+    body: `<p><b>${esc(path)}</b></p><p class="dim">It should contain one folder per system (e.g. snes, psx, Wii).
+      Not the right one? Cancel, open or select the right folder in the list and press “Set games folder” again.</p>`,
+    buttons: [["Cancel", null, ""], ["Use this folder", "ok", "primary"]],
+  });
+  if (choice !== "ok") return false;
+  await call("add_library", { path }); // → commands::add_library (stored in settings.json)
+  toast(`Games folder set: ${path}`);
+  await loadPlaces(false);
+  return true;
+}
+
+$("#btn-set-lib").onclick = () => setGamesFolder();
+$("#btn-lib-hint").onclick = () => setGamesFolder();
+
+// ---------------------------------------------------------------- System of a folder
+
+/** Known systems for the picker (from commands::known_systems), loaded on first use. */
+let KNOWN_SYSTEMS = null;
+
+/** What the file list shows next to a system folder's name, by where the info comes from. */
+const ORIGIN_NOTE = { name: " (from folder name)", manual: " (set by you)" };
+
+/**
+ * Lets the user pick the system of a library folder ThorBro can't identify (no systeminfo.txt
+ * and an unknown name), or correct a guess. Stored per folder in settings.json.
+ */
+async function pickSystem(path, system) {
+  KNOWN_SYSTEMS = KNOWN_SYSTEMS || await call("known_systems", {});
+  const choice = await modal((box, close) => {
+    box.append(el(`<div class="modal-head"><h2>Which system is “${esc(basename(path))}”?</h2></div>`));
+    const body = el(`<div class="modal-body"><p class="dim">ThorBro uses this to sort dropped games into this folder.</p></div>`);
+    const select = el(`<select></select>`);
+    select.innerHTML = `<option value="">Automatic (from the folder name)</option>` +
+      KNOWN_SYSTEMS.map((known) => `<option value="${esc(known.id)}">${esc(known.full)} (${esc(known.id)})</option>`).join("");
+    select.value = system.origin === "manual" ? system.id : "";
+    body.append(select);
+    box.append(body);
+    const foot = el(`<div class="modal-foot"><button>Cancel</button><button class="primary">Save</button></div>`);
+    foot.children[0].onclick = () => close(null);
+    foot.children[1].onclick = () => close({ system: select.value || null });
+    box.append(foot);
+    setTimeout(() => select.focus(), 0);
+  });
+  if (!choice) return;
+  await call("set_folder_system", { path, system: choice.system }); // → commands::set_folder_system
+  await refreshLibs();
+  renderFiles(S.entries.length ? "" : "Empty folder");
 }
 
 // ---------------------------------------------------------------- Folder listing
@@ -110,14 +201,23 @@ function renderFiles(placeholder) {
 function buildFileRow(entry, index, lib) {
   let meta = entry.dir ? "" : human(entry.size);
   let faded = false;
-  if (lib && entry.dir && lib.systems[entry.name]) {
-    const system = lib.systems[entry.name];
-    meta = `${system.full || ""}${system.full ? " · " : ""}${system.count}`;
+  const system = lib && entry.dir ? lib.systems[entry.name] : null;
+  if (system) {
+    const label = system.full ? system.full + (ORIGIN_NOTE[system.origin] || "") : (system.id ? "" : "Unknown system");
+    meta = `${label}${label ? " · " : ""}${system.count}`;
     faded = system.count === 0;
   }
   const row = el(`<div class="row${faded ? " faded" : ""}"><span class="ic">${entry.dir ? "📁" : "📄"}</span><span class="nm"></span><span class="meta"></span></div>`);
   row.querySelector(".nm").textContent = entry.name;
   row.querySelector(".meta").textContent = meta;
+  // Folders without systeminfo.txt: let the user set or correct the system.
+  if (system && system.origin !== "systeminfo") {
+    const button = el(`<button class="mini">${system.id ? "Change system" : "Set system …"}</button>`);
+    button.onmousedown = (ev) => ev.stopPropagation(); // no drag-out from the button
+    button.ondblclick = (ev) => ev.stopPropagation();
+    button.onclick = (ev) => { ev.stopPropagation(); pickSystem(`${S.cwd}/${entry.name}`, system); };
+    row.append(button);
+  }
   row.onclick = () => select(index);
   // Remember where the mouse went down; moving far enough starts a drag-out (see below).
   row.onmousedown = (ev) => { if (ev.button === 0) DRAG.start = { x: ev.clientX, y: ev.clientY, i: index }; };
