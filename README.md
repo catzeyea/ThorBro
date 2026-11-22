@@ -52,7 +52,9 @@ Grab the right file from the [Releases page](../../releases/latest):
 | | `ThorBro-x.y.z-windows-portable.zip` | No install: unzip and run `ThorBro.exe`. Keep the `tools` folder next to it. |
 | **Linux** | `ThorBro_x.y.z_amd64.AppImage` | Runs on any distro. You also need adb and scrcpy, see below. |
 | | `.deb` / `.rpm` | For Ubuntu/Debian/Mint or Fedora/openSUSE. |
-| **macOS** *(experimental)* | `.dmg` | Untested. Install adb and scrcpy via Homebrew, see below. |
+| **macOS** *(experimental)* | `.dmg` | Untested, and only attached to a release if the macOS build succeeded. If it's missing, [build from source](#building-from-source). Install adb and scrcpy via Homebrew, see below. |
+
+On Linux, ThorBro needs WebKitGTK 4.1 and GTK 3 at runtime: the `.deb` and `.rpm` depend on them (on Debian/Ubuntu `libwebkit2gtk-4.1-0` and `libgtk-3-0`), the AppImage bundles them.
 
 <details>
 <summary><b>Windows: "Windows protected your PC"</b></summary>
@@ -168,7 +170,7 @@ Found a bug or have an idea? [Open an issue](../../issues). Please include your 
 | Save backups | `~/.local/share/thor-save/backups/` | `%APPDATA%\thor-save\backups\` | `~/Library/Application Support/thor-save/backups/` |
 | Files pulled from the Thor | `~/Downloads/thor/` | `Downloads\thor\` | `~/Downloads/thor/` |
 
-ThorBro doesn't send anything to the internet. The only exception is the optional AI save search, which passes the folder names it found to Claude Code.
+ThorBro doesn't send anything to the internet. The only exception is the optional AI save search, which passes the full folder paths it found to Claude Code.
 
 ---
 
@@ -177,7 +179,7 @@ ThorBro doesn't send anything to the internet. The only exception is the optiona
 You need [Rust](https://rustup.rs) (stable). On Linux you also need WebKitGTK 4.1 (Arch: `webkit2gtk-4.1`, Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev`).
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/catzeyea/ThorBro.git
 cd ThorBro
 cargo build --release          # -> target/release/thorbro(.exe)
 ```
@@ -231,6 +233,6 @@ Issues and pull requests are welcome, especially:
 
 ThorBro is a fan project and isn't affiliated with AYN. It doesn't include any games, BIOS files or firmware. Please only use games you own.
 
-The Windows release bundles [scrcpy](https://github.com/Genymobile/scrcpy) and adb from the [Android Platform-Tools](https://developer.android.com/tools/releases/platform-tools) (both Apache 2.0).
+The Windows release bundles the files of the [scrcpy](https://github.com/Genymobile/scrcpy) Windows release unchanged: scrcpy itself (Apache 2.0), the FFmpeg libraries (LGPL 2.1 or later), SDL3 (zlib license), libusb (LGPL 2.1 or later) and adb from the [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) (see the [Android SDK terms](https://developer.android.com/studio/terms)). Versions and license texts are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), which is also included in the Windows downloads.
 
 ThorBro itself is licensed under the [MIT License](LICENSE).
