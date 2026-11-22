@@ -556,11 +556,73 @@ pub fn log(msg: String) {
 
 // --- Stream ------------------------------------------------------------------------------------
 
-/// Starts screen mirroring (`which` = `"both"`, `"top"`, `"bottom"`). Returns the running screens.
+/// One display in the Stream tab: what scrcpy reported, a label and the last used options.
+#[derive(Serialize)]
+pub struct StreamDisplay {
+    #[serde(flatten)]
+    display: stream::Display,
+    label: String,
+    options: stream::StreamOptions,
+}
+
+/// Asks scrcpy which displays it can mirror (`scrcpy --list-displays`, takes about a second).
 #[tauri::command]
-pub fn stream_start(state: State<'_, AppState>, which: String) -> CmdResult<Vec<String>> {
-    state.streams.start(&which)?;
-    Ok(state.streams.cleanup())
+pub async fn stream_displays(state: State<'_, AppState>) -> CmdResult<Vec<StreamDisplay>> {
+    let displays = run_blocking(stream::list_displays).await?;
+    let ids: Vec<u32> = displays.iter().map(|display| display.id).collect();
+    state.streams.set_detected(ids.clone());
+    let saved = settings::load().stream;
+    Ok(displays
+        .into_iter()
+        .map(|display| StreamDisplay {
+            label: stream::display_label(display.id, &ids),
+            options: saved.get(&display.id).copied().unwrap_or_default(),
+            display,
+        })
+        .collect())
+}
+
+/// One entry of `stream_start_displays`: a display id and the options to start it with.
+#[derive(serde::Deserialize)]
+pub struct StreamRequest {
+    id: u32,
+    options: stream::StreamOptions,
+}
+
+/// Starts one scrcpy window per requested display and remembers the options per display in
+/// `settings.json`. A display that fails to start shows up in `failures` of the result, the
+/// others keep running.
+#[tauri::command]
+pub fn stream_start_displays(state: State<'_, AppState>, displays: Vec<StreamRequest>) -> CmdResult<stream::StreamStatus> {
+    let mut requests = Vec::with_capacity(displays.len());
+    for request in displays {
+        requests.push((request.id, request.options.validate()?));
+    }
+    let mut config = settings::load();
+    for (id, options) in &requests {
+        config.stream.insert(*id, *options);
+    }
+    // Not being able to remember the options is no reason to refuse mirroring.
+    if let Err(e) = settings::save(&config) {
+        eprintln!("couldn't save the stream options: {e}");
+    }
+    state.streams.start_many(&requests)
+}
+
+/// Quick start with the fixed display ids (`which` = `"both"`, `"top"`, `"bottom"`) and default
+/// options. If a screen fails, it is listed in `failures` of the result.
+#[tauri::command]
+pub fn stream_start(state: State<'_, AppState>, which: String) -> CmdResult<stream::StreamStatus> {
+    // The error text is part of the status (failures), so it isn't returned twice.
+    let _ = state.streams.start(&which);
+    Ok(state.streams.status())
+}
+
+/// Closes the window of one display.
+#[tauri::command]
+pub fn stream_stop_display(state: State<'_, AppState>, display: u32) -> stream::StreamStatus {
+    state.streams.stop_display(display);
+    state.streams.status()
 }
 
 /// Closes all mirroring windows.
@@ -569,8 +631,8 @@ pub fn stream_stop(state: State<'_, AppState>) {
     state.streams.stop();
 }
 
-/// Names of the screens that are currently mirrored.
+/// Which displays are mirrored right now and which streams failed.
 #[tauri::command]
-pub fn stream_status(state: State<'_, AppState>) -> Vec<String> {
-    state.streams.cleanup()
+pub fn stream_status(state: State<'_, AppState>) -> stream::StreamStatus {
+    state.streams.status()
 }

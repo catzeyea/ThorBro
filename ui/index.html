@@ -89,16 +89,23 @@
   <!-- ============================ Stream ============================ -->
   <section class="page" id="page-stream">
     <h1>Mirror screens</h1>
-    <p class="dim">Shows the Thor's screens on your PC over USB (scrcpy). View only, no control. Audio comes from the top screen.</p>
-    <div class="stream-grid">
-      <button class="stream-btn" data-which="both"><span class="big">▣▣</span>Both screens</button>
-      <button class="stream-btn" data-which="top"><span class="big">▣</span>Top only</button>
-      <button class="stream-btn" data-which="bottom"><span class="big">▢</span>Bottom only</button>
-    </div>
-    <div class="stream-status">
+    <p class="dim">Shows the Thor's screens on your PC over USB (scrcpy), each in its own window. View only, no control. Audio comes with the top screen.</p>
+    <div class="stream-toolbar">
+      <button id="stream-detect">Detect screens</button>
+      <button id="stream-both" class="primary" disabled>Stream both</button>
+      <button id="stream-stop" class="danger hidden">Stop all</button>
       <span id="stream-status" class="dim">Nothing running right now.</span>
-      <button id="stream-stop" class="danger hidden">Close all</button>
     </div>
+    <div id="stream-note" class="lib-hint hidden"><span></span></div>
+    <div id="stream-displays" class="cards"></div>
+    <details class="stream-quick">
+      <summary>Quick start without detection (fixed ids: 0 = top, 4 = bottom, default options)</summary>
+      <div class="stream-grid">
+        <button class="stream-btn" data-which="both"><span class="big">▣▣</span>Both screens</button>
+        <button class="stream-btn" data-which="top"><span class="big">▣</span>Top only</button>
+        <button class="stream-btn" data-which="bottom"><span class="big">▢</span>Bottom only</button>
+      </div>
+    </details>
   </section>
 
   <!-- ============================ Overlays ============================ -->

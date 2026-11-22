@@ -25,7 +25,7 @@
 | **Game sorting** | Drop a game into the window and ThorBro detects the system from the ES-DE folders and file extensions, then suggests the matching `ROMs/<system>` folder. Switch updates and DLC can go to `switch/update`. |
 | **Unpacking** | ThorBro extracts zip, 7z and tar itself, and can do it before copying. Archives already on the Thor can be extracted in place. File names are made SD-card safe automatically. |
 | **Saves** | Set up save folders per game, then push them PC → Thor or Thor → PC with one click. ThorBro shows which side is newer and **makes a backup before every overwrite**. You can also import saves from archives, e.g. 100% saves from the internet. |
-| **Stream** | Mirror the top screen, the bottom screen or both to your PC over USB (via scrcpy). View only, with audio from the top screen. |
+| **Stream** | Mirror the top screen, the bottom screen or both to your PC over USB (via scrcpy), each in its own window. ThorBro detects the screens, and size, bitrate and always-on-top are remembered per screen. View only, with audio from the top screen. |
 
 ---
 
@@ -130,14 +130,20 @@ The old save is backed up before every overwrite. You'll find the backups in the
 
 ### Stream
 
-Open the **Stream** tab and choose *Both screens*, *Top only* or *Bottom only*.
-Each screen opens in its own window. You keep playing on the Thor.
+Open the **Stream** tab. ThorBro asks scrcpy which screens it can see and shows one card per screen.
+Start a single screen from its card or click *Stream both*. Each screen opens in its own window, and every
+card has its own *Stop* button (*Stop all* closes everything). You keep playing on the Thor.
+
+Size, bitrate and *Always on top* are set per screen and remembered for the next time.
+If a stream fails to start, the error appears on its card and the other screen keeps running.
+*Quick start* below the cards starts the screens with the fixed ids (0 = top, 4 = bottom) without detecting them first.
 
 ### Command line
 
 ```text
 thorbro                       start the app
 thorbro stream [top|bottom]   mirror screens (default: both)
+thorbro displays              list the screens scrcpy can mirror
 thorbro list                  list configured games
 thorbro status <game>         compare saves
 thorbro pc <game>             pull the Thor's save to the PC
@@ -158,7 +164,8 @@ Game names can be shortened (`thorbro pc totk`, `thorbro status zelda`).
 | **Linux: "no permissions" / "unauthorized"** | udev rules are missing. Install `android-udev` (Arch) or `android-sdk-platform-tools-common` (Debian/Ubuntu), then replug. |
 | **"adb not found"** | Windows: keep the `tools` folder next to `ThorBro.exe`. Linux/macOS: install adb as shown above. |
 | **No game folders in the sidebar** | Launch ES-DE on the Thor once so it creates `ROMs/` with the system folders, then reload ThorBro. |
-| **Bottom screen stays black in the stream** | The display number can change between firmware versions. Please [open an issue](../../issues). |
+| **Stream tab finds only one screen** | scrcpy can't see the bottom screen right now. Check that it's switched on and click *Detect screens* again. `thorbro displays` shows the same list in a terminal. If it still finds one, please [open an issue](../../issues). |
+| **Bottom screen stays black in the stream** | The display number can change between firmware versions. Use the cards (they use the detected ids) instead of *Quick start*, and please [open an issue](../../issues). |
 
 Found a bug or have an idea? [Open an issue](../../issues). Please include your OS, the ThorBro version and what exactly happened.
 

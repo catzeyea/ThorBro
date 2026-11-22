@@ -34,12 +34,12 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 |---|---|
 | `main.rs` | Einstiegspunkt. Mit Argumenten startet die Kommandozeile, sonst das Fenster. Registriert State und alle Commands. |
 | `commands.rs` | Alle `#[tauri::command]`-Funktionen, also das, was die UI aufrufen darf. Dünne Hüllen um die Module darunter. Enthält auch `AppState`. |
-| `cli.rs` | Kommandozeile: `thorbro stream / list / status / pc / thor`. |
+| `cli.rs` | Kommandozeile: `thorbro stream / displays / list / status / pc / thor`. |
 | `adb.rs` | adb finden und aufrufen, Shell-Quoting (`shell_quote`), `run-as` für private App-Ordner, Gerätestatus, Speicherorte. |
 | `files.rs` | Dateimanager (auflisten, umbenennen, löschen, holen), Kopier-Warteschlange PC → Thor mit Fortschritt, Rausziehen Thor → PC über einen Cache. |
 | `library.rs` | ES-DE-`ROMs`-Ordner finden und gedroppte Dateien einem System zuordnen (Switch-Title-ID, Header-Bytes, Dateiendung). |
 | `unpack.rs` | Archive entpacken (zip/7z/tar in Rust, sonst externes 7z/bsdtar/unrar), Dateinamen FAT-tauglich machen. |
-| `stream.rs` | scrcpy-Fenster für den oberen und unteren Bildschirm starten und beenden. |
+| `stream.rs` | Displays erkennen (`scrcpy --list-displays`), pro Display ein scrcpy-Fenster starten und beenden, festhalten, warum ein Stream fehlgeschlagen ist. |
 | `util.rs` | Kleinkram: Größen/Zeit formatieren, MD5, Ordner kopieren und spiegeln (Ersatz für rsync), `which`, Prozess mit Timeout. |
 | `saves/mod.rs` | Überblick über das Spielstand-Modul, gemeinsame Helfer, Re-Exports. |
 | `saves/config.rs` | `games.json` lesen und schreiben, Daten- und Backup-Ordner. |
@@ -67,7 +67,7 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `js/saves.js` | Spielkarten, Kartenmenü, Sync-Ablauf. |
 | `js/saves-setup.js` | Spiel hinzufügen (Suche, KI-Vorschlag, Prüfen). |
 | `js/saves-import.js` | Spielstand importieren. |
-| `js/stream.js` | Stream-Tab. |
+| `js/stream.js` | Stream-Tab: eine Karte pro erkanntem Display, „Stream both“ / „Stop all“, Schnellstart. |
 | `js/main.js` | Start: erste Geräteabfrage und Timer. |
 
 Die JS-Dateien sind klassische `<script>`-Dateien ohne `type="module"`. Sie teilen sich einen

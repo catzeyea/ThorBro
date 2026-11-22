@@ -34,15 +34,15 @@ For screen mirroring it starts `scrcpy`.
 |---|---|
 | `main.rs` | Entry point. With arguments it runs the command line, otherwise the window. Registers the state and all commands. |
 | `commands.rs` | All `#[tauri::command]` functions, i.e. everything the UI is allowed to call. Thin wrappers around the modules below. Also holds `AppState`. |
-| `cli.rs` | Command line: `thorbro stream / list / status / pc / thor`. |
+| `cli.rs` | Command line: `thorbro stream / displays / list / status / pc / thor`. |
 | `adb.rs` | Finding and calling adb, shell quoting (`shell_quote`), `run-as` for private app folders, device status, storage locations. |
 | `files.rs` | File manager (list, rename, delete, fetch), copy queue PC → Thor with progress, dragging Thor → PC through a cache. |
 | `library.rs` | Finding ES-DE `ROMs` folders and assigning dropped files to a system (Switch title ID, header bytes, file extension). |
 | `systems.rs` | Built-in list of known systems (aliases, extensions) for folders without ES-DE `systeminfo.txt`. |
 | `esde_import.rs` | "Import ES-DE info": preview and write ES-DE `systeminfo.txt` files (one place for the format), optional case-only renames to ES-DE folder names. |
-| `settings.rs` | `<config dir>/thorBro/settings.json` (`%APPDATA%`, `~/Library/Application Support`, `~/.config`): custom game library folders and systems picked per folder. |
+| `settings.rs` | `<config dir>/thorBro/settings.json` (`%APPDATA%`, `~/Library/Application Support`, `~/.config`): custom game library folders, systems picked per folder and the last used stream options per display. |
 | `unpack.rs` | Extracting archives (zip/7z/tar in Rust, otherwise external 7z/bsdtar/unrar), making file names FAT-safe. |
-| `stream.rs` | Starting and stopping the scrcpy windows for the top and bottom screen. |
+| `stream.rs` | Detecting the displays (`scrcpy --list-displays`), starting and stopping one scrcpy window per display, recording why a stream failed. |
 | `util.rs` | Small helpers: formatting sizes/times, MD5, copying and mirroring folders (replacement for rsync), `which`, running a process with a timeout. |
 | `saves/mod.rs` | Overview of the save module, shared helpers, re-exports. |
 | `saves/config.rs` | Reading and writing `games.json`, data and backup folders. |
@@ -70,7 +70,7 @@ For screen mirroring it starts `scrcpy`.
 | `js/saves.js` | Game cards, card menu, sync flow. |
 | `js/saves-setup.js` | Adding a game (search, AI suggestion, check). |
 | `js/saves-import.js` | Importing a save. |
-| `js/stream.js` | Stream tab. |
+| `js/stream.js` | Stream tab: one card per detected display, Stream both / Stop all, quick start. |
 | `js/main.js` | Startup: first device poll and timers. |
 
 The JS files are classic `<script>` files without `type="module"`. They share one global scope,

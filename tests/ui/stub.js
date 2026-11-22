@@ -21,6 +21,21 @@
     .map(([p, e]) => ({ name: p.slice(dir.length + 1), dir: e.dir, size: e.size, mtime: e.mtime }));
 
   const H = (window.HARNESS = { calls: [], latency: {}, fail: {}, defaultLatency: 30, fs });
+  // Fake scrcpy: detected displays, running display ids, failures; failStart[id] = error text.
+  const opts = () => ({ max_size: 0, bitrate_mbps: 16, always_on_top: false });
+  H.stream = {
+    displays: [
+      { id: 0, width: 1920, height: 1080, label: "Top screen", options: opts() },
+      { id: 4, width: 1240, height: 1080, label: "Bottom screen", options: opts() },
+    ],
+    running: [], failures: [], seq: 0, failStart: {},
+  };
+  const streamStatus = () => ({ running: [...H.stream.running].sort((a, b) => a - b), failures: H.stream.failures.slice() });
+  const streamStartOne = (id) => {
+    H.stream.failures = H.stream.failures.filter((f) => f.display !== id);
+    if (H.stream.failStart[id]) H.stream.failures.push({ display: id, seq: ++H.stream.seq, message: H.stream.failStart[id] });
+    else if (!H.stream.running.includes(id)) H.stream.running.push(id);
+  };
   const delay = (cmd, args) => {
     const l = H.latency[cmd];
     return typeof l === "function" ? l(args) : (l ?? H.defaultLatency);
@@ -56,7 +71,16 @@
     classify: () => [],
     cancel_transfer: () => false,
     games: () => ({}),
-    stream_status: () => [],
+    stream_displays: () => JSON.parse(JSON.stringify(H.stream.displays)),
+    stream_start_displays: ({ displays }) => { displays.forEach((d) => streamStartOne(d.id)); return streamStatus(); },
+    stream_start: ({ which }) => { (which === "top" ? [0] : which === "bottom" ? [4] : [0, 4]).forEach(streamStartOne); return streamStatus(); },
+    stream_stop_display: ({ display }) => {
+      H.stream.running = H.stream.running.filter((id) => id !== display);
+      H.stream.failures = H.stream.failures.filter((f) => f.display !== display);
+      return streamStatus();
+    },
+    stream_stop: () => { H.stream.running = []; H.stream.failures = []; },
+    stream_status: () => streamStatus(),
   };
   async function invoke(cmd, args = {}) {
     H.calls.push({ cmd, args: JSON.parse(JSON.stringify(args)), t: performance.now() });
