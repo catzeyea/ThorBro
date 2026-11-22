@@ -332,7 +332,19 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .stream-btn { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px 12px; font-weight: 600; border-radius: 12px; }
 .stream-btn .big { font-size: 30px; line-height: 1; color: var(--accent); }
 .stream-btn.running { border-color: var(--ok); background: var(--ok-soft); }
-.stream-status { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+.stream-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stream-card.running { border-color: var(--ok); }
+.stream-card.failed { border-color: var(--danger); }
+.stream-card .card-top .big { font-size: 22px; line-height: 1; color: var(--accent); }
+.stream-opts { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap; }
+.stream-opts label { display: flex; gap: 6px; align-items: center; }
+.stream-opts input[type=number] {
+  width: 70px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 7px 8px; user-select: text;
+}
+#stream-note span { white-space: pre-wrap; }
+.stream-error { color: var(--danger); font-size: 12px; white-space: pre-wrap; user-select: text; }
+.stream-quick summary { cursor: pointer; color: var(--dim); }
+.stream-quick .stream-grid { margin-top: 10px; }
 
 /* --- Toasts --- */
 .toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; width: calc(100% - 32px); pointer-events: none; }

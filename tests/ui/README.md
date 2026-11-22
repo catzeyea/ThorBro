@@ -1,9 +1,11 @@
-# UI tests for the file manager
+# UI tests for the file manager and the stream tab
 
 Runs the real `ui/index.html` and `ui/js/*` in headless Firefox with a fake Tauri bridge
 (`stub.js`: in-memory Thor file system, adjustable adb latency, injectable failures) and checks
 the file manager's behavior (`tests.js`): cache, request ordering, virtualization, keyed updates,
 selection, rename/new folder/move/delete with rollback, cut/copy/paste, context menu, drag & drop.
+For the stream tab (fake scrcpy in `stub.js`): display cards, per-display start/stop with options,
+"Stream both", failures on the card, the one-display hint, detection errors and the quick start.
 
 ```sh
 node tests/ui/run.mjs           # needs node >= 22 and firefox

@@ -1,4 +1,4 @@
-// UI tests for the file manager, evaluated inside the page (real index.html + scripts, fake Tauri
+// UI tests for the file manager and the stream tab, evaluated inside the page (real index.html + scripts, fake Tauri
 // bridge from stub.js). Returns a JSON string: [{ name, ok, info }].
 (async () => {
   const H = window.HARNESS;
@@ -278,6 +278,59 @@
     check("Alt+Left goes back", S.cwd === "/sdcard/Download");
     key("ArrowRight", { altKey: true });
     check("Alt+Right goes forward", S.cwd === "/sdcard");
+    // ---- stream tab: detected displays, per-display start/stop, "Stream both", failures
+    const cards = () => [...document.querySelectorAll(".stream-card")];
+    const card = (id) => document.querySelector(`.stream-card[data-id="${id}"]`);
+    showTab("stream");
+    check("stream: displays detected on opening the tab", await until(() => cards().length === 2), cards().length);
+    check("stream: labels and sizes shown", card(4).textContent.includes("Bottom screen") && card(4).textContent.includes("1240×1080"), card(4).textContent);
+    check("stream: Stream both enabled, no hint", !$("#stream-both").disabled && $("#stream-note").classList.contains("hidden"));
+    card(4).querySelector('[data-opt="bitrate_mbps"]').value = "8";
+    card(4).querySelector('[data-opt="always_on_top"]').checked = true;
+    $("#stream-both").click();
+    await until(() => card(0).classList.contains("running") && card(4).classList.contains("running"));
+    const started = callsOf("stream_start_displays").pop();
+    check("stream: Stream both starts both displays with their card options",
+      started && started.args.displays.map((d) => d.id).join() === "0,4" &&
+      started.args.displays[1].options.bitrate_mbps === 8 && started.args.displays[1].options.always_on_top === true &&
+      started.args.displays[0].options.bitrate_mbps === 16, JSON.stringify(started && started.args));
+    check("stream: both cards running, options locked, Stop all visible",
+      card(0).classList.contains("running") && card(4).querySelector("[data-opt]").disabled && !$("#stream-stop").classList.contains("hidden"));
+    card(4).querySelector(".stream-toggle").click();
+    await until(() => !card(4).classList.contains("running"));
+    check("stream: Stop on one card stops only that display",
+      callsOf("stream_stop_display").pop()?.args.display === 4 && card(0).classList.contains("running") && !card(4).classList.contains("running"));
+    H.stream.failStart[4] = "Display 4 not found";
+    const toastsBefore = document.querySelectorAll(".toast.err").length;
+    card(4).querySelector(".stream-toggle").click();
+    await until(() => card(4).classList.contains("failed"));
+    check("stream: a failed start is shown on its card and as a toast, the other keeps running",
+      card(4).querySelector(".stream-error").textContent === "Display 4 not found" && card(0).classList.contains("running") &&
+      document.querySelectorAll(".toast.err").length === toastsBefore + 1);
+    await streamStatus();
+    check("stream: the same failure is not toasted twice", document.querySelectorAll(".toast.err").length === toastsBefore + 1);
+    delete H.stream.failStart[4];
+    $("#stream-stop").click();
+    await until(() => !card(0).classList.contains("running"));
+    check("stream: Stop all stops everything and clears the failure",
+      callsOf("stream_stop").length === 1 && !card(4).classList.contains("failed") && $("#stream-stop").classList.contains("hidden"));
+    H.stream.displays = H.stream.displays.slice(0, 1);
+    $("#stream-detect").click();
+    await until(() => cards().length === 1);
+    check("stream: only one display -> clear hint, Stream both disabled",
+      !$("#stream-note").classList.contains("hidden") && $("#stream-note").textContent.includes("only one display") && $("#stream-both").disabled,
+      $("#stream-note").textContent);
+    H.fail.stream_displays = "scrcpy not found – please install scrcpy (see README)";
+    $("#stream-detect").click();
+    await until(() => $("#stream-note").textContent.includes("Couldn't detect"));
+    check("stream: detection error shown in the hint", $("#stream-note").textContent.includes("scrcpy not found") && cards().length === 0);
+    delete H.fail.stream_displays;
+    document.querySelector('.stream-btn[data-which="top"]').click();
+    await until(() => document.querySelector('.stream-btn[data-which="top"]').classList.contains("running"));
+    check("stream: quick start still works", callsOf("stream_start").pop()?.args.which === "top");
+    $("#stream-stop").click();
+    showTab("files");
+
     check("no JS errors logged", !(H.logs || []).length, (H.logs || []).join(" | "));
   } catch (e) {
     check("test crashed", false, (e && e.stack) || e);

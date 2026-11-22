@@ -2,7 +2,8 @@
 //!
 //! Entry point. With command line arguments it runs the CLI (`cli.rs`), otherwise it starts the
 //! Tauri window: registers the state (`commands::AppState`), all commands the UI may call
-//! (`generate_handler!`) and closes the mirroring windows when the app exits.
+//! (`generate_handler!`) and closes the mirroring windows when the app exits (window destroyed or
+//! `RunEvent::Exit`).
 //!
 //! The UI lives in `ui/` (HTML/CSS/JS); see `docs/ARCHITECTURE.md` for the overall picture.
 
@@ -76,7 +77,10 @@ fn main() {
             commands::cleanup_import,
             commands::is_dir,
             commands::log,
+            commands::stream_displays,
+            commands::stream_start_displays,
             commands::stream_start,
+            commands::stream_stop_display,
             commands::stream_stop,
             commands::stream_status
         ])
@@ -87,6 +91,13 @@ fn main() {
                 window.app_handle().state::<AppState>().streams.stop();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("ThorBro failed to start");
+        .build(tauri::generate_context!())
+        .expect("ThorBro failed to start")
+        .run(|app, event| {
+            // Also close the scrcpy windows if the app exits without destroying the window first.
+            if let tauri::RunEvent::Exit = event {
+                use tauri::Manager;
+                app.state::<AppState>().streams.stop();
+            }
+        });
 }
