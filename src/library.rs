@@ -97,7 +97,7 @@ pub fn find_libraries(stores: &[(String, String)]) -> Vec<Library> {
             }
         }
     }
-    libraries.sort_by(|a, b| b.total.cmp(&a.total));
+    libraries.sort_by_key(|library| std::cmp::Reverse(library.total));
     libraries
 }
 
