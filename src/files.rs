@@ -1,7 +1,9 @@
 //! File manager for the Thor, the copy queue PC -> Thor, and dragging files out Thor -> PC.
 //!
-//! - File manager: list, create, rename, delete, pull (all via `adb shell` / `adb pull`).
-//! - Copy queue: jobs from the UI are processed one by one on a background thread. Progress is
+//! - File manager: list, create, rename, move, delete, pull (all via `adb shell` / `adb pull`).
+//!   Moving and deleting several entries is one adb call per batch (`move_paths`, `delete_paths`).
+//! - Copy queue: jobs from the UI are processed one by one on a background thread. Besides
+//!   PC -> Thor uploads it also copies (or moves) inside the Thor, see `thor_copy_one`. Progress is
 //!   sent to the UI as `transfer` events (see `Progress`). The running job can be cancelled
 //!   (see `cancel`).
 //! - Drag out: a file is first fetched into a local cache, then `commands.rs` starts a real OS drag.
@@ -49,6 +51,8 @@ pub struct Entry {
     pub name: String,
     pub dir: bool,
     pub size: u64,
+    /// Last modification time in seconds since 1970 (0 if unknown).
+    pub mtime: i64,
 }
 
 /// Lists a folder on the Thor: folders first, then files, each sorted case-insensitively.
@@ -56,12 +60,13 @@ pub struct Entry {
 /// Hidden files are included. If the folder can't be opened (missing, no permission, adb
 /// error), an error with the shell's message is returned instead of an empty list.
 pub fn listdir(path: &str) -> Result<Vec<Entry>, String> {
-    // `stat` prints "<type>|<size>|<name>" for every entry, e.g. "directory|4096|Download".
+    // `stat` prints "<type>|<size>|<mtime>|<name>" for every entry, e.g.
+    // "directory|4096|1700000000|Download".
     // The globs: `*` normal names, `.[!.]*` hidden names, `..?*` names starting with "..".
     // A glob that matches nothing stays literal and makes stat fail, hence `2>/dev/null` and
     // `exit 0`: only a failed `cd` (or adb itself) makes the command fail.
     let output = sh(&format!(
-        "cd {} || exit 1; stat -c '%F|%s|%n' -- * .[!.]* ..?* 2>/dev/null; exit 0",
+        "cd {} || exit 1; stat -c '%F|%s|%Y|%n' -- * .[!.]* ..?* 2>/dev/null; exit 0",
         shell_quote(path)
     ));
     if !output.ok {
@@ -73,12 +78,20 @@ pub fn listdir(path: &str) -> Result<Vec<Entry>, String> {
     Ok(entries)
 }
 
-/// Parses one `"<type>|<size>|<name>"` line from `listdir`. `None` for malformed lines.
+/// Parses one `"<type>|<size>|<mtime>|<name>"` line from `listdir`. `None` for malformed lines.
 fn parse_stat_line(line: &str) -> Option<Entry> {
-    // `splitn(3, ..)` stops after the second `|`, so names containing `|` stay intact.
-    let mut fields = line.splitn(3, '|');
-    let (kind, size, name) = (fields.next()?, fields.next()?, fields.next()?);
-    Some(Entry { name: name.to_string(), dir: kind.contains("directory"), size: size.parse().unwrap_or(0) })
+    // `splitn(4, ..)` stops after the third `|`, so names containing `|` stay intact.
+    let mut fields = line.splitn(4, '|');
+    let (kind, size, mtime, name) = (fields.next()?, fields.next()?, fields.next()?, fields.next()?);
+    if name.is_empty() {
+        return None;
+    }
+    Some(Entry {
+        name: name.to_string(),
+        dir: kind.contains("directory"),
+        size: size.parse().unwrap_or(0),
+        mtime: mtime.parse().unwrap_or(0),
+    })
 }
 
 /// Turns a failed adb call into an error with the most useful text.
@@ -134,6 +147,145 @@ pub fn delete(path: &str) -> Result<(), String> {
         return Err("I'd rather not delete that (too high up in the file system).".into());
     }
     check(sh(&format!("rm -rf -- {}", shell_quote(path))))
+}
+
+// --- Batch move / delete -----------------------------------------------------------------------
+//
+// Many entries in one adb call: each entry becomes a small shell snippet that prints
+// `<index>|ok`, `<index>|exists` or `<index>|err|<message>`. A failing entry doesn't stop the
+// others, and the UI gets one result per entry (so it can roll back exactly the failed ones).
+
+/// Outcome of one entry of `move_paths` / `delete_paths`. `error: None` means it worked.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct ItemResult {
+    pub path: String,
+    pub error: Option<String>,
+}
+
+/// What to do for one entry of a batch.
+#[derive(Debug, PartialEq)]
+enum Step {
+    /// Run `command` on the Thor; with `target`, fail instead if `target` already exists.
+    Run { command: String, target: Option<String> },
+    /// Nothing to do on the Thor; `None` = counts as success, `Some` = this error.
+    Done(Option<String>),
+}
+
+/// Parent folder without trailing slash; the root stays `/`.
+fn clean_dir(dir: &str) -> &str {
+    let trimmed = dir.trim_end_matches('/');
+    if trimmed.is_empty() { "/" } else { trimmed }
+}
+
+/// `dir` + `/` + `name`, without a double slash for the root.
+fn join_remote(dir: &str, name: &str) -> String {
+    let dir = clean_dir(dir);
+    if dir == "/" { format!("/{name}") } else { format!("{dir}/{name}") }
+}
+
+/// True if `dir` is `src` itself or lies inside it (a folder can't be moved/copied into itself).
+fn is_inside(dir: &str, src: &str) -> bool {
+    dir == src || dir.starts_with(&format!("{src}/"))
+}
+
+/// How `src` is moved into the folder `dest_dir`.
+fn plan_move(src: &str, dest_dir: &str) -> Step {
+    let src = src.trim_end_matches('/');
+    let dest_dir = clean_dir(dest_dir);
+    let name = adb::posix_basename(src);
+    if src.is_empty() || name.is_empty() {
+        return Step::Done(Some("Invalid path".into()));
+    }
+    if adb::posix_dirname(src) == dest_dir {
+        return Step::Done(None); // already there
+    }
+    if is_inside(dest_dir, src) {
+        return Step::Done(Some(format!("{name}: can't move a folder into itself")));
+    }
+    let target = join_remote(dest_dir, name);
+    Step::Run { command: format!("mv -- {} {}", shell_quote(src), shell_quote(&target)), target: Some(target) }
+}
+
+/// How `path` is deleted (with the same safety net as `delete`).
+fn plan_delete(path: &str) -> Step {
+    if path.trim_end_matches('/').matches('/').count() < MIN_DELETE_DEPTH {
+        return Step::Done(Some("I'd rather not delete that (too high up in the file system).".into()));
+    }
+    Step::Run { command: format!("rm -rf -- {}", shell_quote(path)), target: None }
+}
+
+/// The shell snippet for step `index` (see the section comment for its output).
+fn step_script(index: usize, command: &str, target: Option<&str>) -> String {
+    let run = format!("if o=$({command} 2>&1); then echo '{index}|ok'; else echo \"{index}|err|$o\" | head -n 1; fi");
+    match target {
+        Some(target) => format!("if [ -e {} ]; then echo '{index}|exists'; else {run}; fi", shell_quote(target)),
+        None => run,
+    }
+}
+
+/// Reads the answers of a batch script: one `Option<Result>` per step (`None` = no answer).
+fn parse_batch_output(stdout: &str, count: usize) -> Vec<Option<Result<(), String>>> {
+    let mut answers = vec![None; count];
+    for line in stdout.lines() {
+        let mut fields = line.splitn(3, '|');
+        let (Some(index), Some(status)) = (fields.next(), fields.next()) else { continue };
+        let Some(slot) = index.trim().parse::<usize>().ok().and_then(|i| answers.get_mut(i)) else { continue };
+        *slot = Some(match status {
+            "ok" => Ok(()),
+            "exists" => Err("already exists there".to_string()),
+            _ => Err(fields.next().unwrap_or("").trim().to_string()),
+        });
+    }
+    answers
+}
+
+/// Runs the planned steps in one adb call and returns one result per path.
+fn run_batch(paths: &[String], steps: Vec<Step>) -> Vec<ItemResult> {
+    let script: String = steps
+        .iter()
+        .enumerate()
+        .filter_map(|(index, step)| match step {
+            Step::Run { command, target } => Some(step_script(index, command, target.as_deref()) + "\n"),
+            Step::Done(_) => None,
+        })
+        .collect();
+    let output = if script.is_empty() { None } else { Some(adb::sh_script(&script)) };
+    let answers = output.as_ref().map(|out| parse_batch_output(&out.stdout, steps.len())).unwrap_or_default();
+    paths
+        .iter()
+        .zip(steps)
+        .enumerate()
+        .map(|(index, (path, step))| {
+            let name = adb::posix_basename(path);
+            let error = match step {
+                Step::Done(error) => error,
+                Step::Run { .. } => match answers.get(index).cloned().flatten() {
+                    Some(Ok(())) => None,
+                    Some(Err(e)) if e.is_empty() => Some(format!("{name}: failed")),
+                    Some(Err(e)) => Some(format!("{name}: {e}")),
+                    None => {
+                        let why = output.as_ref().map(|out| out.err_text()).filter(|t| !t.is_empty());
+                        Some(format!("{name}: {}", why.unwrap_or_else(|| "no answer from the Thor".into())))
+                    }
+                },
+            };
+            ItemResult { path: path.clone(), error }
+        })
+        .collect()
+}
+
+/// Moves entries into the folder `dest_dir` on the Thor (one `mv` each, no overwriting).
+/// Inside one storage this is instant; the UI only uses it there (across storages it queues a
+/// copy job with progress instead, see `thor_copy_one`).
+pub fn move_paths(sources: &[String], dest_dir: &str) -> Vec<ItemResult> {
+    let steps = sources.iter().map(|src| plan_move(src, dest_dir)).collect();
+    run_batch(sources, steps)
+}
+
+/// Deletes entries on the Thor (recursively, no recycle bin).
+pub fn delete_paths(paths: &[String]) -> Vec<ItemResult> {
+    let steps = paths.iter().map(|path| plan_delete(path)).collect();
+    run_batch(paths, steps)
 }
 
 /// Local folder for files copied from the Thor: `~/Downloads/thor`.
@@ -212,6 +364,8 @@ pub struct Progress {
 /// - `unpack`: extract the archive first and upload its contents.
 /// - `flatten`: skip a single wrapper folder inside the archive (for games).
 /// - `remote`: `src` is on the Thor (it is fetched, extracted on the PC and pushed back).
+/// - `thor_copy`: `src` and `dest` are both on the Thor; copied with `cp -r` on the device.
+/// - `move_after`: with `thor_copy`, delete `src` after a successful copy (a move across storages).
 ///
 /// `Deserialize` generates the code that builds this struct from the JSON sent by `ui/js/transfer.js`.
 /// `#[serde(default)]` means: if the field is missing in the JSON, use `false`.
@@ -225,6 +379,10 @@ pub struct Job {
     pub flatten: bool,
     #[serde(default)]
     pub remote: bool,
+    #[serde(default)]
+    pub thor_copy: bool,
+    #[serde(default)]
+    pub move_after: bool,
 }
 
 /// Waiting jobs plus a flag whether a worker thread is currently running.
@@ -574,6 +732,99 @@ fn extract_job(app: &AppHandle, job: &Job, more: &str) -> Result<(tempfile::Temp
     Ok((work, items))
 }
 
+// --- Copying inside the Thor ------------------------------------------------------------------
+
+/// PID file of the running Thor-side `cp`, so a cancel can stop it on the device.
+const THOR_COPY_PID_FILE: &str = "/data/local/tmp/thorbro-copy.pid";
+
+/// Most "name (copy N)" variants tried before giving up.
+const MAX_COPY_NAMES: u32 = 99;
+
+/// Name for the n-th duplicate of `name` in the same folder:
+/// `a.txt` -> `a (copy).txt`, `a (copy 2).txt`, …; names without extension (or dot files) get the
+/// suffix at the end.
+fn copy_name(name: &str, n: u32) -> String {
+    let suffix = if n <= 1 { " (copy)".to_string() } else { format!(" (copy {n})") };
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => format!("{}{suffix}{}", &name[..dot], &name[dot..]),
+        _ => format!("{name}{suffix}"),
+    }
+}
+
+/// First `copy_name` that doesn't exist in `dir` yet.
+fn free_copy_name(dir: &str, name: &str) -> Result<String, String> {
+    (1..=MAX_COPY_NAMES)
+        .map(|n| copy_name(name, n))
+        .find(|candidate| !remote_exists(&join_remote(dir, candidate)))
+        .ok_or_else(|| format!("{name}: no free name for the copy"))
+}
+
+/// Stops the `cp` started by `thor_copy_one` on the Thor and waits (up to 3 s) until it is gone,
+/// so the partial copy can be removed afterwards. Killing the local adb process alone doesn't
+/// reliably stop the command on the device.
+fn kill_thor_copy() {
+    let _ = sh(&format!(
+        "p=$(cat {f} 2>/dev/null); rm -f {f}; if [ -n \"$p\" ]; then kill $p 2>/dev/null; i=0; \
+         while kill -0 $p 2>/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done; fi",
+        f = THOR_COPY_PID_FILE
+    ));
+}
+
+/// Copies (or, with `move_after`, moves) `job.src` into the folder `job.dest`, both on the Thor,
+/// with progress and cancel like an upload.
+///
+/// Pasting into the folder the source is in makes a "name (copy)". Otherwise an existing target
+/// is never overwritten. On cancel the partial copy is removed; the source is only deleted after
+/// the copy finished without error.
+fn thor_copy_one(app: &AppHandle, queue: &SharedQueue, job: &Job, more: &str) -> Result<(), JobError> {
+    if is_cancelled(queue) {
+        return Err(JobError::Cancelled(String::new()));
+    }
+    let src = job.src.trim_end_matches('/');
+    let dest = clean_dir(&job.dest);
+    let name = adb::posix_basename(src).to_string();
+    if is_inside(dest, src) {
+        return Err(JobError::Failed(format!("{name}: can't copy a folder into itself")));
+    }
+    if !remote_exists(src) {
+        return Err(JobError::Failed(format!("{name} doesn't exist on the Thor (anymore).")));
+    }
+    let same_folder = adb::posix_dirname(src) == dest;
+    let target_name = if same_folder && !job.move_after { free_copy_name(dest, &name)? } else { name.clone() };
+    let target = join_remote(dest, &target_name);
+    if remote_exists(&target) {
+        return Err(JobError::Failed(format!("{target_name} already exists in {dest}")));
+    }
+
+    let verb = if job.move_after { "Moving" } else { "Copying" };
+    let total = remote_size(src).max(1);
+    report_busy(app, format!("{verb} {target_name} ({})", human(total)), format!("to {dest}{more}"), 0.0);
+    let _ = sh(&format!("rm -f {THOR_COPY_PID_FILE}"));
+    // `$$` is the PID of the shell on the Thor; `exec` makes `cp` keep that PID.
+    let command = format!("echo $$ > {THOR_COPY_PID_FILE}; exec cp -r -- {} {}", shell_quote(src), shell_quote(&target));
+    let mut child = spawn_adb(&["shell", &command]).map_err(|e| format!("{name}: {e}"))?;
+
+    let started = Instant::now();
+    let cancelled = wait_with_polling(&mut child, PUSH_SLEEP, PUSH_POLL_INTERVAL, || is_cancelled(queue), || {
+        let done = remote_size(&target).min(total);
+        let (detail, fraction) = transfer_detail(done, total, started);
+        report_busy(app, format!("{verb} {target_name}"), format!("{detail}{more}"), fraction);
+    });
+    if cancelled {
+        kill_thor_copy();
+        return Err(JobError::Cancelled(clean_up_partial(&target, &target_name, false)));
+    }
+    match child.wait_with_output() {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => return Err(JobError::Failed(transfer_error(&name, &output))),
+        Err(e) => return Err(JobError::Failed(format!("{name}: {e}"))),
+    }
+    if job.move_after {
+        delete(src).map_err(|e| format!("{name} was copied to {dest}, but the original couldn't be removed: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Takes the next job from the queue. Returns `(job, jobs still waiting)`.
 /// If the queue is empty, the busy flag is cleared in the same lock, so a concurrent
 /// `enqueue` either sees the worker still running or starts a new one, never neither.
@@ -598,7 +849,12 @@ fn worker(app: AppHandle, queue: SharedQueue) {
         let Some(job) = job else { break };
         dests.insert(job.dest.clone());
         let more = if waiting > 0 { format!(" · {waiting} more waiting") } else { String::new() };
-        let (count, result) = if job.unpack {
+        let (count, result) = if job.thor_copy {
+            match thor_copy_one(&app, &queue, &job, &more) {
+                Ok(()) => (1, Ok(())),
+                Err(e) => (0, Err(e)),
+            }
+        } else if job.unpack {
             unpack_job(&app, &queue, &job, &more)
         } else {
             match push_one(&app, &queue, Path::new(&job.src), &job.dest, &more) {
@@ -616,7 +872,7 @@ fn worker(app: AppHandle, queue: SharedQueue) {
             Err(JobError::Cancelled(note)) => {
                 cancelled += 1;
                 // `src` is a Thor path for remote jobs, a local (maybe Windows) path otherwise.
-                let name = if job.remote { adb::posix_basename(&job.src).to_string() } else { local_name(Path::new(&job.src)) };
+                let name = if job.remote || job.thor_copy { adb::posix_basename(&job.src).to_string() } else { local_name(Path::new(&job.src)) };
                 report_cancelled(&app, format!("Cancelled {name}"), note);
             }
         }
@@ -791,5 +1047,63 @@ mod tests {
         assert!(!differs_only_by_case("/sdcard/a/Wii", "/sdcard/a/Wii"));
         assert!(!differs_only_by_case("/sdcard/a/Wii", "/sdcard/a/WiiU"));
         assert!(!differs_only_by_case("/sdcard/a/Wii", "/sdcard/b/wii2"));
+    }
+
+    #[test]
+    fn stat_lines_are_parsed() {
+        let entry = parse_stat_line("directory|4096|1700000000|Download").unwrap();
+        assert_eq!((entry.name.as_str(), entry.dir, entry.size, entry.mtime), ("Download", true, 4096, 1700000000));
+        let entry = parse_stat_line("regular file|12|5|a|b.txt").unwrap();
+        assert_eq!((entry.name.as_str(), entry.dir, entry.mtime), ("a|b.txt", false, 5));
+        assert!(parse_stat_line("regular file|12|5").is_none());
+        assert!(parse_stat_line("regular file|12|5|").is_none());
+    }
+
+    #[test]
+    fn moves_are_planned() {
+        assert_eq!(
+            plan_move("/sdcard/a/x.iso", "/sdcard/b/"),
+            Step::Run { command: "mv -- /sdcard/a/x.iso /sdcard/b/x.iso".into(), target: Some("/sdcard/b/x.iso".into()) }
+        );
+        assert_eq!(plan_move("/sdcard/a/x.iso", "/sdcard/a"), Step::Done(None));
+        assert!(matches!(plan_move("/sdcard/a", "/sdcard/a/sub"), Step::Done(Some(_))));
+        assert!(matches!(plan_move("/sdcard/a", "/sdcard/a"), Step::Done(Some(_))));
+        // "/sdcard/ab" is not inside "/sdcard/a".
+        assert!(matches!(plan_move("/sdcard/a", "/sdcard/ab"), Step::Run { .. }));
+        assert!(matches!(plan_delete("/sdcard"), Step::Done(Some(_))));
+        assert!(matches!(plan_delete("/sdcard/a"), Step::Run { .. }));
+    }
+
+    #[test]
+    fn batch_output_is_parsed() {
+        let answers = parse_batch_output("0|ok\n2|err|mv: bad: Permission denied\n3|exists\njunk\n9|ok\n", 4);
+        assert_eq!(answers[0], Some(Ok(())));
+        assert_eq!(answers[1], None);
+        assert_eq!(answers[2], Some(Err("mv: bad: Permission denied".into())));
+        assert_eq!(answers[3], Some(Err("already exists there".into())));
+    }
+
+    #[test]
+    fn steps_without_shell_work_skip_adb() {
+        let paths = vec!["/sdcard/a/x".to_string(), "/x".to_string()];
+        let results = run_batch(&paths, vec![Step::Done(None), Step::Done(Some("nope".into()))]);
+        assert_eq!(results[0].error, None);
+        assert_eq!(results[1].error.as_deref(), Some("nope"));
+    }
+
+    #[test]
+    fn copy_names() {
+        assert_eq!(copy_name("game.iso", 1), "game (copy).iso");
+        assert_eq!(copy_name("game.iso", 3), "game (copy 3).iso");
+        assert_eq!(copy_name("Roms", 1), "Roms (copy)");
+        assert_eq!(copy_name(".nomedia", 2), ".nomedia (copy 2)");
+    }
+
+    #[test]
+    fn remote_paths_are_joined() {
+        assert_eq!(join_remote("/", "a"), "/a");
+        assert_eq!(join_remote("/sdcard/", "a"), "/sdcard/a");
+        assert!(is_inside("/sdcard/a/b", "/sdcard/a"));
+        assert!(!is_inside("/sdcard/ab", "/sdcard/a"));
     }
 }

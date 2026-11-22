@@ -173,17 +173,33 @@ pub fn set_folder_system(path: String, system: Option<String>) -> CmdResult<()> 
 
 // --- File manager ------------------------------------------------------------------------------
 
-/// Lists a Thor folder and remembers it as the last opened one.
+/// Lists a Thor folder.
 ///
 /// `move` in `move || ...` makes the closure take ownership of `path`, which is required
 /// because it runs on another thread.
 #[tauri::command]
 pub async fn list_dir(path: String) -> CmdResult<Vec<files::Entry>> {
-    run_blocking(move || {
-        files::save_last(&path);
-        files::listdir(&path)
-    })
-    .await
+    run_blocking(move || files::listdir(&path)).await
+}
+
+/// Remembers the folder the file manager shows, for the next start. Separate from `list_dir`,
+/// because the UI also lists folders in the background (cache refresh) and only it knows which
+/// folder is the current one.
+#[tauri::command]
+pub fn remember_dir(path: String) {
+    files::save_last(&path);
+}
+
+/// Moves entries into `dest` (one storage, plain `mv`). One result per entry.
+#[tauri::command]
+pub async fn move_paths(sources: Vec<String>, dest: String) -> CmdResult<Vec<files::ItemResult>> {
+    run_blocking(move || Ok(files::move_paths(&sources, &dest))).await
+}
+
+/// Deletes entries. One result per entry.
+#[tauri::command]
+pub async fn delete_paths(paths: Vec<String>) -> CmdResult<Vec<files::ItemResult>> {
+    run_blocking(move || Ok(files::delete_paths(&paths))).await
 }
 
 #[tauri::command]
