@@ -102,7 +102,7 @@ pub fn extract_archive(archive: &Path, dest: &Path) -> Result<(), String> {
             return Ok(());
         }
     } else if lowercase.ends_with(".7z") {
-        if sevenz_rust::decompress_file(archive, dest).is_ok() {
+        if extract_7z(archive, dest).is_ok() {
             return Ok(());
         }
     } else if lowercase.ends_with(".tar") || lowercase.ends_with(".tar.gz") || lowercase.ends_with(".tgz") {
@@ -123,6 +123,35 @@ fn extract_zip(archive: &Path, dest: &Path) -> bool {
     let Ok(file) = fs::File::open(archive) else { return false };
     let Ok(mut zip) = zip::ZipArchive::new(file) else { return false };
     zip.extract(dest).is_ok()
+}
+
+/// Built-in 7z extraction that can't write outside `dest`.
+///
+/// Same as `sevenz_rust::decompress_file`, except that each entry name first goes through
+/// `join_inside`, so names like `../x` or `/abs/x` can't escape `dest` ("zip slip").
+fn extract_7z(archive: &Path, dest: &Path) -> Result<(), sevenz_rust::Error> {
+    sevenz_rust::decompress_file_with_extract_fn(archive, dest, |entry, reader, _unchecked_path| {
+        // Entries without a usable name are skipped, like in `unpack::extract`.
+        let Some(path) = join_inside(dest, entry.name()) else { return Ok(true) };
+        sevenz_rust::default_entry_extract_fn(entry, reader, &path)
+    })
+}
+
+/// Joins a path from inside an archive below `root`, keeping only normal path components.
+///
+/// `..`, `.`, root and drive prefixes are dropped, so the result always stays below `root`.
+/// Unlike `unpack::safe_join` names are not made FAT-safe, so normal archives extract exactly
+/// as before. Returns `None` if no component is left.
+fn join_inside(root: &Path, inner: &str) -> Option<PathBuf> {
+    let mut out = root.to_path_buf();
+    let mut has_component = false;
+    for component in Path::new(inner).components() {
+        if let std::path::Component::Normal(part) = component {
+            out.push(part);
+            has_component = true;
+        }
+    }
+    has_component.then_some(out)
 }
 
 /// Extracts with an external `7z` or `bsdtar`, whichever is installed and works first.
@@ -201,6 +230,67 @@ mod tests {
         assert!(is_archive("/sdcard/Download/Zelda Save.ZIP"));
         assert!(is_archive("save.tar.zst"));
         assert!(!is_archive("/sdcard/Download/save.sav"));
+    }
+
+    /// Builds a 7z archive with the given `(entry name, content)` pairs.
+    fn write_7z(path: &Path, entries: &[(&str, &[u8])]) {
+        let mut writer = sevenz_rust::SevenZWriter::create(path).unwrap();
+        for (name, content) in entries {
+            let mut entry = sevenz_rust::SevenZArchiveEntry::new();
+            entry.name = name.to_string();
+            entry.has_stream = true;
+            writer.push_archive_entry(entry, Some(*content)).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn seven_zip_entries_cannot_escape_the_target_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("evil.7z");
+        let dest = tmp.path().join("out");
+        write_7z(
+            &archive,
+            &[
+                ("../x", b"parent"),
+                ("/abs/x", b"absolute"),
+                ("a/../../x", b"sneaky"),
+                ("save/game.sav", b"normal"),
+            ],
+        );
+
+        extract_archive(&archive, &dest).unwrap();
+
+        // Next to the target folder there is still only the archive and the target folder.
+        let mut beside: Vec<String> =
+            fs::read_dir(tmp.path()).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        beside.sort();
+        assert_eq!(beside, ["evil.7z", "out"]);
+        // Every extracted file lies below the target folder.
+        let files: Vec<PathBuf> = walkdir::WalkDir::new(&dest)
+            .into_iter()
+            .map(|e| e.unwrap())
+            .filter(|e| e.file_type().is_file())
+            .map(|e| e.into_path())
+            .collect();
+        assert!(!files.is_empty());
+        for file in &files {
+            assert!(file.canonicalize().unwrap().starts_with(dest.canonicalize().unwrap()), "{}", file.display());
+        }
+        assert!(!Path::new("/abs/x").exists());
+        // Normal entries end up exactly where they did before.
+        assert_eq!(fs::read(dest.join("save/game.sav")).unwrap(), b"normal");
+        assert_eq!(fs::read(dest.join("abs/x")).unwrap(), b"absolute");
+    }
+
+    #[test]
+    fn join_inside_keeps_only_normal_components() {
+        let root = Path::new("/r");
+        assert_eq!(join_inside(root, "../x").unwrap(), Path::new("/r/x"));
+        assert_eq!(join_inside(root, "/abs/x").unwrap(), Path::new("/r/abs/x"));
+        assert_eq!(join_inside(root, "a/../../x").unwrap(), Path::new("/r/a/x"));
+        assert_eq!(join_inside(root, "Zelda: BotW/save.dat").unwrap(), Path::new("/r/Zelda: BotW/save.dat"));
+        assert_eq!(join_inside(root, "../.."), None);
     }
 
     #[test]
