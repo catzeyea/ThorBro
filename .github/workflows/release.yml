@@ -24,7 +24,9 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
       - name: Create draft release
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
@@ -34,19 +36,33 @@ jobs:
     needs: create-release
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       # The Windows scrcpy build ships adb.exe too – both go into tools\
+      # Pinned version, checked against the SHA256SUMS.txt of the same scrcpy release.
       - name: Fetch scrcpy + adb
         shell: pwsh
+        env:
+          SCRCPY_VERSION: v5.0.1
         run: |
-          gh release download -R Genymobile/scrcpy --pattern "scrcpy-win64-*.zip" -O scrcpy.zip
-          Expand-Archive scrcpy.zip -DestinationPath scrcpy-tmp
+          $name = "scrcpy-win64-$env:SCRCPY_VERSION.zip"
+          gh release download $env:SCRCPY_VERSION -R Genymobile/scrcpy --pattern $name --pattern SHA256SUMS.txt
+          $expected = @(Get-Content SHA256SUMS.txt |
+            Where-Object { $_ -match "^[0-9a-fA-F]{64}\s+\*?$([regex]::Escape($name))$" } |
+            ForEach-Object { ($_ -split '\s+')[0].ToLower() } |
+            Select-Object -Unique)
+          if ($expected.Count -ne 1) { throw "No unique SHA256 for $name in SHA256SUMS.txt" }
+          $actual = (Get-FileHash $name -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $expected[0]) { throw "SHA256 mismatch for ${name}: expected $($expected[0]), got $actual" }
+          Write-Host "SHA256 OK: $actual  $name"
+          Expand-Archive $name -DestinationPath scrcpy-tmp
           $inner = Get-ChildItem scrcpy-tmp -Directory | Select-Object -First 1
           New-Item -ItemType Directory -Force tools | Out-Null
           Copy-Item "$($inner.FullName)\*" tools -Recurse
@@ -79,7 +95,9 @@ jobs:
     # Older Ubuntu = the AppImage also runs on older distros
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -87,9 +105,9 @@ jobs:
             librsvg2-dev libxdo-dev libssl-dev patchelf file
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - name: Build
         run: npx --yes @tauri-apps/cli@2 build --bundles appimage,deb,rpm
       - name: Upload
@@ -105,12 +123,14 @@ jobs:
     # macOS is untested – a failure here does not block the other downloads
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - name: Build
         run: npx --yes @tauri-apps/cli@2 build --bundles dmg
       - name: Upload
