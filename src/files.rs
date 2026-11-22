@@ -770,6 +770,12 @@ fn kill_thor_copy() {
     ));
 }
 
+/// Shell command that copies `src` to `target` on the Thor and leaves its PID in
+/// `THOR_COPY_PID_FILE`. `$$` is the PID of the shell on the Thor; `exec` makes `cp` keep it.
+fn thor_copy_command(src: &str, target: &str) -> String {
+    format!("echo $$ > {THOR_COPY_PID_FILE}; exec cp -r -- {} {}", shell_quote(src), shell_quote(target))
+}
+
 /// Copies (or, with `move_after`, moves) `job.src` into the folder `job.dest`, both on the Thor,
 /// with progress and cancel like an upload.
 ///
@@ -800,9 +806,7 @@ fn thor_copy_one(app: &AppHandle, queue: &SharedQueue, job: &Job, more: &str) ->
     let total = remote_size(src).max(1);
     report_busy(app, format!("{verb} {target_name} ({})", human(total)), format!("to {dest}{more}"), 0.0);
     let _ = sh(&format!("rm -f {THOR_COPY_PID_FILE}"));
-    // `$$` is the PID of the shell on the Thor; `exec` makes `cp` keep that PID.
-    let command = format!("echo $$ > {THOR_COPY_PID_FILE}; exec cp -r -- {} {}", shell_quote(src), shell_quote(&target));
-    let mut child = spawn_adb(&["shell", &command]).map_err(|e| format!("{name}: {e}"))?;
+    let mut child = spawn_adb(&["shell", &thor_copy_command(src, &target)]).map_err(|e| format!("{name}: {e}"))?;
 
     let started = Instant::now();
     let cancelled = wait_with_polling(&mut child, PUSH_SLEEP, PUSH_POLL_INTERVAL, || is_cancelled(queue), || {
@@ -1105,5 +1109,145 @@ mod tests {
         assert_eq!(join_remote("/sdcard/", "a"), "/sdcard/a");
         assert!(is_inside("/sdcard/a/b", "/sdcard/a"));
         assert!(!is_inside("/sdcard/ab", "/sdcard/a"));
+    }
+}
+
+/// Checks the shell side against a real device. Run with a Thor attached:
+/// `cargo test device_ -- --ignored --test-threads=1`
+///
+/// Everything happens inside fresh `thorbro-selftest-<time>` folders on internal storage and (if
+/// present) the first SD card, which are deleted at the end. Nothing else is touched.
+#[cfg(test)]
+mod device_tests {
+    use super::*;
+
+    /// A fresh sandbox folder under `base`, deleted when dropped.
+    struct Sandbox(String);
+    impl Sandbox {
+        fn new(base: &str) -> Self {
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+            let path = format!("{base}/thorbro-selftest-{stamp}");
+            mkdir(&path).expect("create sandbox");
+            Sandbox(path)
+        }
+        fn path(&self, name: &str) -> String {
+            join_remote(&self.0, name)
+        }
+    }
+    impl Drop for Sandbox {
+        fn drop(&mut self) {
+            assert!(self.0.contains("/thorbro-selftest-"));
+            let _ = delete(&self.0);
+        }
+    }
+
+    fn touch(path: &str, bytes: u32) {
+        let out = sh(&format!("head -c {bytes} /dev/zero > {}", shell_quote(path)));
+        assert!(out.ok, "touch {path}: {}", out.err_text());
+    }
+
+    fn names(dir: &str) -> Vec<String> {
+        listdir(dir).unwrap().into_iter().map(|entry| entry.name).collect()
+    }
+
+    fn sd_card() -> Option<String> {
+        adb::storages().into_iter().map(|(_, path)| path).find(|path| path.starts_with("/storage/"))
+    }
+
+    #[test]
+    #[ignore = "needs a Thor attached via adb"]
+    fn device_listing_has_mtime_and_odd_names() {
+        let sandbox = Sandbox::new("/sdcard");
+        // ("|" can't be used: Android's shared storage refuses it. Its parsing is unit-tested.)
+        touch(&sandbox.path("a b's [c].txt"), 3);
+        touch(&sandbox.path(".hidden"), 1);
+        touch(&sandbox.path("..dots"), 1);
+        mkdir(&sandbox.path("Sub")).unwrap();
+        let entries = listdir(&sandbox.0).unwrap();
+        let get = |name: &str| entries.iter().find(|entry| entry.name == name).unwrap_or_else(|| panic!("{name} missing"));
+        assert_eq!(get("a b's [c].txt").size, 3);
+        assert!(get("Sub").dir);
+        assert!(get(".hidden").mtime > 1_600_000_000, "mtime {}", get(".hidden").mtime);
+        assert!(entries.iter().any(|entry| entry.name == "..dots"));
+        assert!(listdir(&sandbox.path("Sub")).unwrap().is_empty());
+        assert!(listdir(&sandbox.path("missing")).is_err());
+    }
+
+    #[test]
+    #[ignore = "needs a Thor attached via adb"]
+    fn device_batch_move_delete_and_case_rename() {
+        let sandbox = Sandbox::new("/sdcard");
+        let dest = sandbox.path("dest");
+        mkdir(&dest).unwrap();
+        touch(&sandbox.path("one.bin"), 1);
+        touch(&sandbox.path("it's two.bin"), 1);
+        touch(&sandbox.path("Clash.txt"), 1);
+        touch(&join_remote(&dest, "clash.txt"), 1);
+        let sources = vec![sandbox.path("one.bin"), sandbox.path("it's two.bin"), sandbox.path("Clash.txt"), dest.clone()];
+        let results = move_paths(&sources, &dest);
+        assert_eq!(results[0].error, None);
+        assert_eq!(results[1].error, None);
+        // Shared storage ignores case: "Clash.txt" collides with "clash.txt" and must not overwrite it.
+        assert!(results[2].error.as_deref().unwrap_or("").contains("already exists"), "{:?}", results[2]);
+        assert!(results[3].error.as_deref().unwrap_or("").contains("into itself"), "{:?}", results[3]);
+        let mut moved = names(&dest);
+        moved.sort();
+        assert_eq!(moved, ["clash.txt", "it's two.bin", "one.bin"]);
+
+        rename(&dest, &sandbox.path("DEST")).expect("case-only rename");
+        assert!(names(&sandbox.0).contains(&"DEST".to_string()));
+
+        // (The "too high up" safety net is covered by `moves_are_planned` without touching a device.)
+        let doomed = vec![sandbox.path("DEST/one.bin"), sandbox.path("Clash.txt")];
+        let results = delete_paths(&doomed);
+        assert_eq!(results[0].error, None);
+        assert_eq!(results[1].error, None);
+        assert_eq!(names(&sandbox.path("DEST")).len(), 2);
+    }
+
+    #[test]
+    #[ignore = "needs a Thor attached via adb"]
+    fn device_thor_copy_runs_and_can_be_killed() {
+        let src_box = Sandbox::new("/sdcard");
+        let dest_base = sd_card().unwrap_or_else(|| "/sdcard".into());
+        let dest_box = Sandbox::new(&dest_base);
+        // Many small files: a big single file lands in the page cache and is "copied" in
+        // milliseconds, while per-file overhead on FUSE keeps this copy busy for seconds.
+        let src = src_box.path("many");
+        mkdir(&src).unwrap();
+        let out = sh(&format!("cd {} && i=0; while [ $i -lt 3000 ]; do echo $i > f$i; i=$((i+1)); done", shell_quote(&src)));
+        assert!(out.ok, "{}", out.err_text());
+
+        // Finished copy.
+        let small = src_box.path("small.bin");
+        touch(&small, 4096);
+        let target = dest_box.path("small.bin");
+        let out = adb::run(&["shell", &thor_copy_command(&small, &target)]);
+        assert!(out.ok, "{}", out.err_text());
+        assert_eq!(listdir(&dest_box.0).unwrap()[0].size, 4096);
+
+        // Cancelled copy: kill the local adb like wait_with_polling does, then kill_thor_copy.
+        let target = dest_box.path("many");
+        let _ = sh(&format!("rm -f {THOR_COPY_PID_FILE}"));
+        let mut child = spawn_adb(&["shell", &thor_copy_command(&src, &target)]).unwrap();
+        std::thread::sleep(Duration::from_millis(700));
+        assert!(child.try_wait().unwrap().is_none(), "copy finished too fast to test the cancel");
+        let pid = sh(&format!("cat {THOR_COPY_PID_FILE}")).stdout.trim().to_string();
+        assert!(!pid.is_empty(), "no PID file");
+        let _ = child.kill();
+        let _ = child.wait();
+        std::thread::sleep(Duration::from_millis(300));
+        eprintln!("cp still running after killing only the local adb: {}", sh(&format!("kill -0 {pid}")).ok);
+        kill_thor_copy();
+        assert!(!sh(&format!("kill -0 {pid}")).ok, "cp {pid} still running after kill_thor_copy");
+        let size_now = remote_size(&target);
+        std::thread::sleep(Duration::from_millis(800));
+        assert_eq!(remote_size(&target), size_now, "partial copy still growing");
+        let copied = sh(&format!("ls {} | wc -l", shell_quote(&target))).stdout.trim().parse::<u32>().unwrap_or(0);
+        eprintln!("files copied before the cancel: {copied} of 3000");
+        assert!(copied < 3000, "copy was not interrupted");
+        clean_up_partial(&target, "many", false);
+        assert!(!remote_exists(&target));
+        let _ = sh(&format!("rm -f {THOR_COPY_PID_FILE}"));
     }
 }
