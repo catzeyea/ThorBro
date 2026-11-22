@@ -33,7 +33,7 @@ async function pollDevice(force = false) {
   $("#device-text").textContent = device.connected ? `Connected: ${device.message}` : device.message;
   if (changed) {
     if (device.connected) await loadPlaces(true);
-    else { S.entries = []; renderFiles("No Thor connected"); }
+    else { S.entries = []; renderFiles("No Thor connected"); updateLibHint(); }
     if (S.tab === "saves") refreshCards();
   }
 }

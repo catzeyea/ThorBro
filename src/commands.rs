@@ -9,7 +9,7 @@
 //! `saves/`, `stream.rs` and `unpack.rs`.
 
 use crate::library::{self, Library};
-use crate::{adb, files, saves, stream, unpack, util};
+use crate::{adb, files, saves, settings, stream, systems, unpack, util};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -90,7 +90,7 @@ pub struct Places {
 pub async fn places(state: State<'_, AppState>, restore: bool) -> CmdResult<Places> {
     let (stores, libs) = run_blocking(|| {
         let stores = adb::storages();
-        let libs = library::find_libraries(&stores);
+        let libs = library::find_libraries(&stores, &settings::load());
         Ok((stores, libs))
     })
     .await?;
@@ -108,9 +108,54 @@ pub async fn places(state: State<'_, AppState>, restore: bool) -> CmdResult<Plac
 /// Re-reads the game libraries (after a copy, game counts change).
 #[tauri::command]
 pub async fn refresh_libs(state: State<'_, AppState>) -> CmdResult<Vec<Library>> {
-    let libs = run_blocking(|| Ok(library::find_libraries(&adb::storages()))).await?;
+    let libs = run_blocking(|| Ok(library::find_libraries(&adb::storages(), &settings::load()))).await?;
     *state.libs.lock().unwrap() = libs.clone();
     Ok(libs)
+}
+
+// --- Library settings --------------------------------------------------------------------------
+
+/// Adds a Thor folder as game library ("Set games folder"). The UI reloads the places afterwards.
+#[tauri::command]
+pub fn add_library(path: String) -> CmdResult<()> {
+    let path = settings::clean_path(&path)?;
+    let mut config = settings::load();
+    if !config.libraries.contains(&path) {
+        config.libraries.push(path);
+    }
+    settings::save(&config)
+}
+
+/// Removes a game library that the user added (the folder itself stays untouched).
+#[tauri::command]
+pub fn remove_library(path: String) -> CmdResult<()> {
+    let path = settings::clean_path(&path)?;
+    let mut config = settings::load();
+    config.libraries.retain(|library| *library != path);
+    settings::save(&config)
+}
+
+/// All systems the user can pick for a folder ThorBro doesn't recognize.
+#[tauri::command]
+pub fn known_systems() -> Vec<systems::KnownSystem> {
+    systems::KNOWN.to_vec()
+}
+
+/// Sets the system of a folder by hand (`system` = None: back to automatic detection).
+#[tauri::command]
+pub fn set_folder_system(path: String, system: Option<String>) -> CmdResult<()> {
+    let path = settings::clean_path(&path)?;
+    let mut config = settings::load();
+    match system {
+        Some(id) if systems::by_id(&id).is_some() => {
+            config.folder_systems.insert(path, id);
+        }
+        Some(id) => return Err(format!("Unknown system: {id}")),
+        None => {
+            config.folder_systems.remove(&path);
+        }
+    }
+    settings::save(&config)
 }
 
 // --- File manager ------------------------------------------------------------------------------
@@ -269,8 +314,8 @@ fn targets_for(lib: &Library, guess: &library::Guess, cwd: &str) -> Vec<Target> 
         add(format!("{}  ({candidate})", lib.full(candidate)), format!("{}/{candidate}", lib.path));
     }
     add(format!("Current folder  ({cwd})"), cwd.to_string());
-    if lib.systems.contains_key("switch") {
-        add("Nintendo Switch / update  (Updates & DLC)".into(), format!("{}/switch/update", lib.path));
+    if let Some(switch) = lib.folder_for("switch") {
+        add(format!("Nintendo Switch / update  ({switch}/update, Updates & DLC)"), format!("{}/{switch}/update", lib.path));
     }
     let mut all_systems: Vec<&String> = lib.systems.keys().collect();
     all_systems.sort_by_key(|name| lib.full(name).to_lowercase());
@@ -311,6 +356,7 @@ fn incoming_item(path: &str, lib: &Library, cwd: &str) -> Incoming {
 
 /// Examines dropped files. An empty list means "no game among them", so the UI copies
 /// straight into the current folder. `force` returns the list anyway (library switch in the dialog).
+/// Without any library the list is empty too; the UI checks that case itself and asks first.
 ///
 /// `lib` is an index into the libraries; out of range falls back to the first one.
 #[tauri::command]
@@ -332,6 +378,13 @@ pub async fn classify(state: State<'_, AppState>, paths: Vec<String>, cwd: Strin
 #[tauri::command]
 pub fn enqueue(app: AppHandle, state: State<'_, AppState>, jobs: Vec<files::Job>) {
     files::enqueue(app, state.queue.clone(), jobs);
+}
+
+/// Cancels the running copy job; `clear_queue` also drops all waiting jobs.
+/// Returns `false` if nothing was running.
+#[tauri::command]
+pub fn cancel_transfer(state: State<'_, AppState>, clear_queue: bool) -> bool {
+    files::cancel(&state.queue, clear_queue)
 }
 
 // --- Saves -------------------------------------------------------------------------------------

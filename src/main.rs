@@ -16,7 +16,9 @@ mod commands;
 mod files;
 mod library;
 mod saves;
+mod settings;
 mod stream;
+mod systems;
 mod unpack;
 mod util;
 
@@ -37,6 +39,10 @@ fn main() {
             commands::device,
             commands::places,
             commands::refresh_libs,
+            commands::add_library,
+            commands::remove_library,
+            commands::known_systems,
+            commands::set_folder_system,
             commands::list_dir,
             commands::make_dir,
             commands::rename,
@@ -47,6 +53,7 @@ fn main() {
             commands::drag_start,
             commands::classify,
             commands::enqueue,
+            commands::cancel_transfer,
             commands::games,
             commands::game_status,
             commands::plan_sync,
