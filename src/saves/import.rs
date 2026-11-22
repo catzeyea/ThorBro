@@ -277,8 +277,16 @@ fn import_to_side(
     if merge {
         if let Some(backup_path) = &backup {
             to_write = state_dir().join(format!("merge-{timestamp}-{side}"));
-            util::copy_tree(backup_path, &to_write, false)?;
-            util::copy_tree(src_dir, &to_write, true)?;
+            // If the folder already exists, copy_tree refuses before touching anything, and
+            // we must not delete a folder we didn't create.
+            let already_existed = to_write.exists();
+            let merged = util::copy_tree(backup_path, &to_write, false).and_then(|_| util::copy_tree(src_dir, &to_write, true));
+            if let Err(e) = merged {
+                if !already_existed {
+                    let _ = fs::remove_dir_all(&to_write); // don't leave a half-merged folder behind
+                }
+                return Err(e);
+            }
         }
     }
 
