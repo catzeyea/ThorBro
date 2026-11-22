@@ -96,12 +96,14 @@ function renderFiles(placeholder) {
   list.innerHTML = "";
   const lib = libAt(S.cwd);
   const shown = S.entries.filter((entry) => !(lib && entry.name === "systeminfo.txt"));
+  // Update before the early return below, otherwise an empty folder keeps the entries of the
+  // previous one and keyboard actions (arrow keys, F2, Del) would act on those.
+  S.shown = shown;
   if (!shown.length) {
     list.append(el(`<div class="placeholder">${esc(placeholder || "")}</div>`));
     return;
   }
   shown.forEach((entry, i) => list.append(buildFileRow(entry, i, lib)));
-  S.shown = shown;
 }
 
 /** One row of the file list, with click/double-click/drag handlers. */
