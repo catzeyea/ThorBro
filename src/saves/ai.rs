@@ -118,6 +118,10 @@ Reply ONLY with JSON, no explanation around it:
 /// path that isn't one of our candidates.
 fn parse_reply(reply: &str, pc: &[Cand], thor: &[Cand]) -> AiPick {
     let (Some(start), Some(end)) = (reply.find('{'), reply.rfind('}')) else { return AiPick::default() };
+    // A reply like "} ... {" would make the range run backwards, and slicing would panic.
+    if end < start {
+        return AiPick::default();
+    }
     let mut pick: AiPick = serde_json::from_str(&reply[start..=end]).unwrap_or_default();
     if !pc.iter().any(|cand| Some(&cand.path) == pick.pc.as_ref()) {
         pick.pc = None;
@@ -126,4 +130,28 @@ fn parse_reply(reply: &str, pc: &[Cand], thor: &[Cand]) -> AiPick {
         pick.thor = None;
     }
     pick
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cand(path: &str) -> Cand {
+        Cand { path: path.into(), mtime: 0.0, when: String::new(), files: 1, note: String::new(), matched: false }
+    }
+
+    #[test]
+    fn reply_with_closing_brace_before_opening_brace() {
+        // A "}" before the first "{" must not panic.
+        let pick = parse_reply("} oops {", &[cand("/a")], &[cand("/b")]);
+        assert!(pick.pc.is_none() && pick.thor.is_none());
+    }
+
+    #[test]
+    fn reply_keeps_only_known_paths() {
+        let reply = r#"Sure: {"pc": "/a", "pc_reason": "x", "thor": "/invented", "thor_reason": "y"}"#;
+        let pick = parse_reply(reply, &[cand("/a")], &[cand("/b")]);
+        assert_eq!(pick.pc.as_deref(), Some("/a"));
+        assert!(pick.thor.is_none());
+    }
 }
