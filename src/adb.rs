@@ -198,7 +198,7 @@ pub struct Device {
 /// Asks adb whether a Thor is connected and returns a user-facing status text.
 ///
 /// When connected, `message` is the device model name (`ro.product.model`).
-/// If several devices are attached, only the first one is looked at.
+/// With more than one device attached, it reports "not connected" (see below).
 pub fn device_status() -> Device {
     let output = run(&["devices"]);
     if !output.ok && output.stdout.is_empty() {
@@ -217,6 +217,15 @@ pub fn device_status() -> Device {
     let Some((_, state)) = devices.first() else {
         return Device { connected: false, message: "No Thor found – is the cable plugged in and USB debugging on?".into() };
     };
+    // All our adb calls go to "the" device without `-s <serial>`. With several devices attached
+    // (another phone, or the Thor via USB *and* wireless debugging) adb refuses every command
+    // with "more than one device/emulator", so don't pretend to be connected.
+    if devices.len() > 1 {
+        return Device {
+            connected: false,
+            message: "More than one Android device found – unplug the others or turn off wireless debugging".into(),
+        };
+    }
     match state.as_str() {
         "device" => {
             let model = sh("getprop ro.product.model").stdout.trim().to_string();
