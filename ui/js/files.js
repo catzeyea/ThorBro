@@ -57,7 +57,9 @@ async function go(path) {
     // → commands::list_dir → files::listdir (also remembers the folder for next start)
     S.entries = await call("list_dir", { path: S.cwd });
   } catch {
+    // The reason was already shown as a toast by call().
     S.entries = [];
+    return renderFiles("Couldn't open this folder");
   }
   renderFiles(S.entries.length ? "" : "Empty folder");
 }

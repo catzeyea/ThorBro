@@ -52,10 +52,20 @@ pub struct Entry {
 
 /// Lists a folder on the Thor: folders first, then files, each sorted case-insensitively.
 ///
-/// Hidden files are included. If the folder can't be read, the list is simply empty.
+/// Hidden files are included. If the folder can't be opened (missing, no permission, adb
+/// error), an error with the shell's message is returned instead of an empty list.
 pub fn listdir(path: &str) -> Result<Vec<Entry>, String> {
     // `stat` prints "<type>|<size>|<name>" for every entry, e.g. "directory|4096|Download".
-    let output = sh(&format!("cd {} && stat -c '%F|%s|%n' -- * .[!.]* 2>/dev/null", shell_quote(path)));
+    // The globs: `*` normal names, `.[!.]*` hidden names, `..?*` names starting with "..".
+    // A glob that matches nothing stays literal and makes stat fail, hence `2>/dev/null` and
+    // `exit 0`: only a failed `cd` (or adb itself) makes the command fail.
+    let output = sh(&format!(
+        "cd {} || exit 1; stat -c '%F|%s|%n' -- * .[!.]* ..?* 2>/dev/null; exit 0",
+        shell_quote(path)
+    ));
+    if !output.ok {
+        return Err(output.err_text());
+    }
     let mut entries: Vec<Entry> = output.stdout.lines().filter_map(parse_stat_line).collect();
     // `!a.dir` is `false` for folders, and `false < true`, so folders sort first.
     entries.sort_by_key(|entry| (!entry.dir, entry.name.to_lowercase()));
