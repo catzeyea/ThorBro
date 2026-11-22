@@ -395,10 +395,31 @@ fn extract_with_progress(app: &AppHandle, archive: &Path, out: &Path, name: &str
 }
 
 /// Extracts an archive (fetching it from the Thor first if it's remote) and uploads its
-/// contents. Returns the number of uploaded entries.
-fn unpack_job(app: &AppHandle, job: &Job, more: &str) -> Result<u32, String> {
-    // `work` is a `TempDir`: when this function returns (also on error), it is dropped and
-    // deletes the folder with everything in it.
+/// contents.
+///
+/// Returns how many entries were uploaded *and* the result. They are separate because an upload
+/// can fail halfway: the entries pushed before the error still count as copied.
+fn unpack_job(app: &AppHandle, job: &Job, more: &str) -> (u32, Result<(), String>) {
+    // `work` is a `TempDir`: it deletes the folder with everything in it when it is dropped at
+    // the end of this function, so it must stay alive until all uploads are done.
+    let (work, items) = match extract_job(app, job, more) {
+        Ok(extracted) => extracted,
+        Err(e) => return (0, Err(e)),
+    };
+    let mut uploaded = 0;
+    for item in &items {
+        if let Err(e) = push_one(app, item, &job.dest, more) {
+            return (uploaded, Err(e));
+        }
+        uploaded += 1;
+    }
+    drop(work);
+    (uploaded, Ok(()))
+}
+
+/// First half of `unpack_job`: fetch (if remote) and extract. Returns the work folder and the
+/// entries to upload.
+fn extract_job(app: &AppHandle, job: &Job, more: &str) -> Result<(tempfile::TempDir, Vec<PathBuf>), String> {
     let work = unpack::work_dir()?;
     let archive = local_archive(app, job, work.path(), more)?;
     let name = local_name(&archive);
@@ -411,12 +432,7 @@ fn unpack_job(app: &AppHandle, job: &Job, more: &str) -> Result<u32, String> {
     if items.is_empty() {
         return Err(format!("{name}: archive is empty"));
     }
-    let mut uploaded = 0;
-    for item in &items {
-        push_one(app, item, &job.dest, more)?;
-        uploaded += 1;
-    }
-    Ok(uploaded)
+    Ok((work, items))
 }
 
 /// Takes the next job from the queue. Returns `(job, jobs still waiting)`.
@@ -441,17 +457,18 @@ fn worker(app: AppHandle, queue: SharedQueue) {
         let Some(job) = job else { break };
         dests.insert(job.dest.clone());
         let more = if waiting > 0 { format!(" · {waiting} more waiting") } else { String::new() };
-        let result = if job.unpack {
+        let (count, result) = if job.unpack {
             unpack_job(&app, &job, &more)
         } else {
-            push_one(&app, Path::new(&job.src), &job.dest, &more).map(|_| 1)
-        };
-        match result {
-            Ok(count) => copied += count,
-            Err(e) => {
-                failed += 1;
-                last_error = Some(e);
+            match push_one(&app, Path::new(&job.src), &job.dest, &more) {
+                Ok(()) => (1, Ok(())),
+                Err(e) => (0, Err(e)),
             }
+        };
+        copied += count;
+        if let Err(e) = result {
+            failed += 1;
+            last_error = Some(e);
         }
     }
     trigger_media_scan(&dests);
