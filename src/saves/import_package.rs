@@ -149,8 +149,20 @@ fn extract_external(archive: &Path, dest: &Path) -> Result<(), String> {
     Err(match last_error {
         None => "Can't extract the archive – rar and similar formats need 7-Zip.".into(),
         // Only the end of the output: that's where the actual error usually is.
-        Some(error) => format!("Extraction failed:\n{}", &error[error.len().saturating_sub(MAX_ERROR_CHARS)..]),
+        Some(error) => format!("Extraction failed:\n{}", tail(&error, MAX_ERROR_CHARS)),
     })
+}
+
+/// The last `max_bytes` bytes of `text`, moved forward to the next character boundary.
+///
+/// Rust strings are UTF-8; slicing in the middle of a multi-byte character (e.g. "ä") panics,
+/// so the cut position must be a char boundary.
+fn tail(text: &str, max_bytes: usize) -> &str {
+    let mut cut = text.len().saturating_sub(max_bytes);
+    while !text.is_char_boundary(cut) {
+        cut += 1;
+    }
+    &text[cut..]
 }
 
 /// Fetches a file or folder from the Thor into `dest_dir`. Returns the local path.
@@ -181,4 +193,18 @@ pub fn fetch_thor_source(remote: &str, dest_dir: &Path) -> Result<PathBuf, Strin
         _ => return Err(format!("Doesn't exist on the Thor:\n{remote}")),
     }
     Ok(local)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tail_never_cuts_inside_a_character() {
+        // "ä" is 2 bytes; a cut after 3 bytes from the end would land inside it.
+        let text = "xxäyy";
+        assert_eq!(tail(text, 3), "yy");
+        assert_eq!(tail(text, 4), "äyy");
+        assert_eq!(tail(text, 100), text);
+    }
 }
