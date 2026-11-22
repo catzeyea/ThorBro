@@ -83,6 +83,16 @@
   <div class="modal-wrap hidden" id="modal"><div class="modal" id="modal-box"></div></div>
   <div class="toasts" id="toasts"></div>
 
-  <script src="app.js"></script>
+  <!-- Plain scripts sharing one global scope, no bundler. The order matters, see js/core.js. -->
+  <script src="js/core.js"></script>
+  <script src="js/dialogs.js"></script>
+  <script src="js/device.js"></script>
+  <script src="js/files.js"></script>
+  <script src="js/transfer.js"></script>
+  <script src="js/saves.js"></script>
+  <script src="js/saves-setup.js"></script>
+  <script src="js/saves-import.js"></script>
+  <script src="js/stream.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>

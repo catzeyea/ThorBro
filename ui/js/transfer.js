@@ -1,0 +1,184 @@
+// ThorBro UI – sending files to the Thor: file dialogs, drag & drop onto the window, the
+// "Where should it go?" sort dialog, the copy queue and its progress bar.
+// The drop handler also feeds the import dialog (saves-import.js) via S.importTarget.
+"use strict";
+
+// ---------------------------------------------------------------- Copy jobs
+
+/** A copy job as expected by files::Job in Rust. */
+const job = (src, dest, unpack = false, flatten = false, remote = false) => ({ src, dest, unpack, flatten, remote });
+
+/** Archive file names (same list as unpack::EXTS in Rust). */
+const ARCHIVE_RE = /\.(zip|7z|rar|tar|tgz|txz|tbz2|tar\.(gz|xz|bz2|zst))$/i;
+
+/** Hands jobs to the Rust copy queue. Progress comes back as "transfer" events. */
+function enqueue(jobs) {
+  if (!jobs.length) return;
+  invoke("enqueue", { jobs }); // → commands::enqueue → files::enqueue
+}
+
+// ---------------------------------------------------------------- Sending
+
+$("#btn-send-files").onclick = async () => {
+  const picked = await T.dialog.open({ multiple: true, title: "Files for the Thor" });
+  if (picked) incoming([].concat(picked));
+};
+$("#btn-send-dirs").onclick = async () => {
+  const picked = await T.dialog.open({ multiple: true, directory: true, title: "Folders for the Thor" });
+  if (picked) incoming([].concat(picked));
+};
+
+/**
+ * Local paths that should go to the Thor. Games are sorted via the dialog, anything
+ * else goes straight into the current folder.
+ */
+async function incoming(paths) {
+  paths = paths.filter(Boolean);
+  if (!paths.length) return;
+  if (!S.connected) {
+    await pollDevice(true);
+    if (!S.connected) return toast("Thor is not connected", true);
+  }
+  if (!S.libs.length) return enqueue(paths.map((path) => job(path, S.cwd)));
+  // → commands::classify → library::classify per file (empty list = no game among them)
+  const items = await call("classify", { paths, cwd: S.cwd, lib: 0, force: false });
+  // Nothing game-like: copy straight into the current folder, as before.
+  if (!items.length) return enqueue(paths.map((path) => job(path, S.cwd)));
+  sortDialog(paths, items);
+}
+
+// ---------------------------------------------------------------- Sort dialog
+
+/**
+ * "Where should it go?": one row per dropped file with a target drop-down (preselected by
+ * Rust) and an optional "extract first" checkbox.
+ * items: Incoming objects from commands::classify.
+ */
+function sortDialog(paths, items) {
+  modal((box, close) => {
+    const body = el(`<div class="modal-body"></div>`);
+    let rows = [];
+    const fill = (list) => {
+      body.innerHTML = "";
+      rows = list.map((item) => {
+        const row = buildSortRow(item);
+        body.append(row.element);
+        return row;
+      });
+    };
+    box.append(buildSortHead(paths, fill));
+    box.append(body);
+    fill(items);
+    box.append(buildSortFoot(box, close, () => rows));
+  }, { wide: true });
+}
+
+/** Title plus, with several libraries, a library drop-down that re-classifies the files. */
+function buildSortHead(paths, fill) {
+  const count = paths.length;
+  const head = el(`<div class="modal-head" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px"><h2>Where should it go?</h2><p class="dim">${count} ${count === 1 ? "file" : "files"} – check the target, change it if needed</p></div></div>`);
+  if (S.libs.length > 1) {
+    const librarySelect = el(`<select title="Game library"></select>`);
+    librarySelect.innerHTML = S.libs.map((lib, i) => `<option value="${i}">${esc(lib.label)} (${lib.total} Games)</option>`).join("");
+    librarySelect.onchange = async () => {
+      // → commands::classify again, for the chosen library (force: always return all rows)
+      fill(await call("classify", { paths, cwd: S.cwd, lib: +librarySelect.value, force: true }));
+    };
+    head.append(librarySelect);
+  }
+  return head;
+}
+
+/** One row of the sort dialog. Returns { element, it, sel, box } (box = unpack checkbox or null). */
+function buildSortRow(item) {
+  const whyClass = item.guess.system ? (item.guess.sure ? "" : "unsure") : "none";
+  const row = el(`<div class="sort-row">
+          <span>${item.dir ? "📁" : "🎮"}</span>
+          <div style="min-width:0"><div class="nm"></div><div class="why ${whyClass}"></div></div>
+          <select></select></div>`);
+  row.querySelector(".nm").textContent = item.name;
+  row.querySelector(".nm").title = item.path;
+  const why = row.querySelector(".why");
+  why.textContent = `${item.size} · ${item.guess.reason}`;
+  why.title = item.guess.reason;
+  const targetSelect = row.querySelector("select");
+  targetSelect.innerHTML = item.targets.map((target, i) => `<option value="${i}">${esc(target.label)}</option>`).join("");
+  targetSelect.value = String(item.selected);
+  let unpackBox = null;
+  if (item.archive) {
+    const label = el(`<label class="unpack"><input type="checkbox"> Extract first (copy the contents instead of the archive)</label>`);
+    unpackBox = label.querySelector("input");
+    unpackBox.checked = item.unpack;
+    row.append(label);
+  }
+  return { element: row, it: item, sel: targetSelect, box: unpackBox };
+}
+
+/**
+ * Cancel / "All to current folder" / Copy. getRows() returns the current rows.
+ * Enter anywhere in the modal box (except in a drop-down) presses Copy.
+ */
+function buildSortFoot(box, close, getRows) {
+  const foot = el(`<div class="modal-foot">
+      <button>Cancel</button><button title="${esc(S.cwd)}">All to current folder</button><button class="primary">Copy</button></div>`);
+  const [cancel, allHere, copy] = foot.children;
+  cancel.onclick = () => close(null);
+  // Recognized games are flattened (single wrapper folders in archives are skipped).
+  const makeJob = ({ it, box }, dest) => job(it.path, dest, !!(box && box.checked), !!it.guess.system);
+  allHere.onclick = () => { close(1); enqueue(getRows().map((row) => makeJob(row, S.cwd))); };
+  copy.onclick = () => { close(1); enqueue(getRows().map((row) => makeJob(row, row.it.targets[+row.sel.value].path))); };
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.tagName !== "SELECT") copy.click(); });
+  setTimeout(() => copy.focus(), 0);
+  return foot;
+}
+
+// ---------------------------------------------------------------- Progress
+
+// Emitted by files.rs (emit_progress) while copying / extracting / fetching.
+T.event.listen("transfer", async ({ payload: progress }) => {
+  $("#progress").classList.remove("hidden");
+  $("#dropzone").classList.toggle("hidden", progress.busy);
+  $("#p-text").textContent = progress.text;
+  $("#p-detail").textContent = progress.detail;
+  // fraction 0 while busy = unknown → animated bar at 30 %.
+  const unknown = progress.busy && progress.fraction <= 0;
+  $("#p-bar").parentElement.classList.toggle("indet", unknown);
+  $("#p-bar").style.width = `${Math.round((unknown ? 0.3 : progress.fraction) * 100)}%`;
+  if (!progress.busy) await onTransferFinished(progress);
+});
+
+/** After a batch: toast, refresh game counts, reload the current folder if it was a target. */
+async function onTransferFinished(progress) {
+  if (progress.error) toast(progress.error, true);
+  else toast(progress.text);
+  // → commands::refresh_libs (game counts changed)
+  S.libs = await call("refresh_libs", {}, true).catch(() => S.libs);
+  const touchesCwd = (dest) => dest === S.cwd || dirname(dest) === S.cwd || dest.startsWith(S.cwd + "/");
+  if (progress.dests.some(touchesCwd)) go(S.cwd);
+  setTimeout(() => { if (!$("#dropzone").classList.contains("hidden")) $("#progress").classList.add("hidden"); }, 6000);
+}
+
+// ---------------------------------------------------------------- Drag & drop onto the window
+
+T.webview.getCurrentWebview().onDragDropEvent((ev) => {
+  const type = ev.payload.type;
+  const overlay = $("#drop-overlay");
+  if (type === "enter" || type === "over") {
+    // Ignore our own drag-out passing over the window.
+    if (DRAG.native || (ev.payload.paths || []).some((path) => FROM_DRAG_CACHE.test(path))) return;
+    if (S.modalOpen && !S.importTarget) return;
+    overlay.classList.remove("hidden");
+    $("#drop-overlay div").textContent = S.importTarget ? "Drop to import" : "Drop to send";
+  } else if (type === "leave") {
+    overlay.classList.add("hidden");
+  } else if (type === "drop") {
+    overlay.classList.add("hidden");
+    const paths = (ev.payload.paths || []).filter((path) => !FROM_DRAG_CACHE.test(path));
+    if (!paths.length) return; // our own drag came back into the window
+    if (S.importTarget) return S.importTarget(paths[0]);
+    if (S.modalOpen) return;
+    if (S.tab !== "files") showTab("files");
+    incoming(paths);
+  }
+});

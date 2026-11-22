@@ -192,12 +192,18 @@ The Rust backend lives in `src/` (Tauri 2). The UI is plain HTML/CSS/JS in `ui/`
 
 | File | Contents |
 |---|---|
+| `src/main.rs` | entry point, Tauri setup |
+| `src/commands.rs` | all commands the UI can call |
+| `src/cli.rs` | command line interface |
 | `src/adb.rs` | finding and calling adb |
 | `src/files.rs` | file manager, copy queue |
 | `src/library.rs` | reading ES-DE folders, detecting games |
-| `src/saves.rs` | finding, comparing, syncing and importing saves |
+| `src/saves/` | finding, comparing, syncing and importing saves |
 | `src/unpack.rs` | extracting archives |
 | `src/stream.rs` | launching scrcpy |
+| `ui/js/` | the UI scripts (loaded in order by `ui/index.html`) |
+
+A longer walkthrough is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (German version: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md)).
 
 ### Releasing a new version
 
