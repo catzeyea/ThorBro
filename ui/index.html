@@ -23,7 +23,9 @@
   <section class="page active" id="page-files">
     <div class="toolbar">
       <select id="place" aria-label="Location"></select>
-      <button class="icon" id="up" title="Up one folder (Backspace)">↑</button>
+      <button class="icon" id="back" title="Back (Alt+Left)" disabled>←</button>
+      <button class="icon" id="forward" title="Forward (Alt+Right)" disabled>→</button>
+      <button class="icon" id="up" title="Up one folder (Backspace, Alt+Up)">↑</button>
       <div class="crumbs" id="crumbs"></div>
       <label class="toggle hidden" id="hide-empty-wrap" title="Hide system folders without games in this games folder"><input type="checkbox" id="hide-empty"> Hide empty</label>
       <button class="icon" id="reload" title="Reload (F5)">⟳</button>
@@ -33,9 +35,22 @@
         If your games are somewhere else (e.g. <code>/sdcard/lisu/Roms</code>), open or select that folder below.</span>
       <button class="primary" id="btn-lib-hint">Set games folder</button>
     </div>
-    <div class="list" id="filelist" tabindex="0"></div>
+    <div class="list-wrap" id="list-wrap">
+      <div class="list-head row-grid" id="list-head">
+        <span></span>
+        <button data-sort="name">Name</button>
+        <span></span>
+        <button data-sort="size" class="num">Size</button>
+        <button data-sort="mtime" class="col-date">Modified</button>
+      </div>
+      <!-- Virtualized: only visible rows are in the DOM, positioned inside #list-sizer (files.js). -->
+      <div class="list" id="filelist" tabindex="0" role="listbox" aria-multiselectable="true">
+        <div class="list-sizer" id="list-sizer"><div class="band hidden" id="band"></div></div>
+        <div class="list-msg hidden" id="list-msg"></div>
+      </div>
+    </div>
     <div class="actions">
-      <button id="btn-mkdir">New folder</button>
+      <button id="btn-mkdir" title="Ctrl+Shift+N">New folder</button>
       <button id="btn-rename">Rename <kbd>F2</kbd></button>
       <button id="btn-delete" class="danger">Delete <kbd>Del</kbd></button>
       <button id="btn-pull" title="Or just drag an entry out of the list onto your desktop or file manager">Copy to PC</button>
@@ -88,6 +103,7 @@
 
   <!-- ============================ Overlays ============================ -->
   <div class="drop-overlay hidden" id="drop-overlay"><div>Drop to send</div></div>
+  <div class="drag-ghost hidden" id="drag-ghost"></div>
   <div class="modal-wrap hidden" id="modal"><div class="modal" id="modal-box"></div></div>
   <div class="toasts" id="toasts"></div>
 
@@ -96,6 +112,7 @@
   <script src="js/dialogs.js"></script>
   <script src="js/device.js"></script>
   <script src="js/files.js"></script>
+  <script src="js/files-actions.js"></script>
   <script src="js/esde.js"></script>
   <script src="js/transfer.js"></script>
   <script src="js/saves.js"></script>

@@ -64,7 +64,8 @@ For screen mirroring it starts `scrcpy`.
 | `js/core.js` | Tauri access (`T`, `invoke`), helpers (`$`, `esc`, `el`, `human`), global state `S`, `toast`, `call`. |
 | `js/dialogs.js` | Modal dialogs: `modal`, `dialog`, `ask`, `busyModal`, `folderPicker`. |
 | `js/device.js` | Tabs and device detection (`pollDevice`). |
-| `js/files.js` | File manager tab and dragging out to the PC. |
+| `js/files.js` | File manager tab, part 1: locations, listing cache, virtualized list, selection, history, keyboard. |
+| `js/files-actions.js` | File manager tab, part 2: cut/copy/paste, rename in place, move, delete, context menu, dragging rows (into folders or out to the PC). |
 | `js/transfer.js` | Sending to the Thor: drag & drop, sort dialog, copy queue, progress bar. |
 | `js/saves.js` | Game cards, card menu, sync flow. |
 | `js/saves-setup.js` | Adding a game (search, AI suggestion, check). |
@@ -83,7 +84,7 @@ earlier file. Code **inside functions** runs later and may use anything.
 
 ```js
 // ui/js/files.js
-S.entries = await call("list_dir", { path: S.cwd });
+const entries = await invoke("list_dir", { path });
 ```
 
 `call` is a small wrapper from `core.js`. It calls `T.core.invoke(cmd, args)` and shows errors
@@ -95,11 +96,7 @@ as a toast. `invoke` returns a **Promise**, so the result arrives asynchronously
 // src/commands.rs
 #[tauri::command]
 pub async fn list_dir(path: String) -> CmdResult<Vec<files::Entry>> {
-    run_blocking(move || {
-        files::save_last(&path);
-        files::listdir(&path)
-    })
-    .await
+    run_blocking(move || files::listdir(&path)).await
 }
 ```
 

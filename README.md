@@ -21,7 +21,7 @@
 
 | Area | What it does |
 |---|---|
-| **Files** | File manager for the Thor (internal storage and SD card). Drag files in from your PC, drag entries out of the list straight onto your desktop, rename, delete, create folders. |
+| **Files** | File manager for the Thor (internal storage and SD card) that works like Explorer or Nautilus: multi-select, cut/copy/paste, drag entries into folders, right-click menu, sorting. Drag files in from your PC, drag entries out of the window straight onto your desktop. |
 | **Game sorting** | Drop a game into the window and ThorBro detects the system from the ES-DE folders and file extensions, then suggests the matching `ROMs/<system>` folder. Switch updates and DLC can go to `switch/update`. |
 | **Unpacking** | ThorBro extracts zip, 7z and tar itself, and can do it before copying. Archives already on the Thor can be extracted in place. File names are made SD-card safe automatically. |
 | **Saves** | Set up save folders per game, then push them PC → Thor or Thor → PC with one click. ThorBro shows which side is newer and **makes a backup before every overwrite**. You can also import saves from archives, e.g. 100% saves from the internet. |
@@ -111,7 +111,9 @@ Start ThorBro. The device name shows up in the top right once the Thor is detect
 ### Files & games
 
 - **Add games:** drag a file or folder into the window. If ThorBro recognizes a game, a dialog shows the suggested target folder (★). You can change it before copying. Regular files go straight into the current folder.
-- **Copy to PC:** drag an entry out of the list onto your desktop or file manager, or press *Copy to PC*. Files end up in `Downloads/thor`.
+- **Copy to PC:** drag entries out of the window onto your desktop or file manager, or press *Copy to PC*. Files end up in `Downloads/thor`.
+- **Organize on the Thor:** select with click, Ctrl+click, Shift+click, Ctrl+A or by dragging a frame on the empty area. Drag entries onto a folder or a part of the path bar to move them (hold Ctrl to copy). Cut/copy/paste work with Ctrl+X/C/V and the right-click menu. Moving inside one storage is instant; copying, or moving between internal storage and SD card, runs in the copy queue with progress and *Cancel*.
+- **Keys:** Enter open · Backspace or Alt+Up up · Alt+Left/Right back/forward · F2 rename · Del delete · Ctrl+Shift+N new folder · F5 refresh · type letters to jump to a name.
 - **Archives:** when dropping, you can tick *Extract first*. It's pre-ticked for systems whose emulator can't read packed games. rar and tar.xz need [7-Zip](https://www.7-zip.org) on the PC.
 
 ### Saves

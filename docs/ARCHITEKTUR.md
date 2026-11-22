@@ -61,7 +61,8 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `js/core.js` | Tauri-Zugriff (`T`, `invoke`), Helfer (`$`, `esc`, `el`, `human`), globaler Zustand `S`, `toast`, `call`. |
 | `js/dialogs.js` | Modale Dialoge: `modal`, `dialog`, `ask`, `busyModal`, `folderPicker`. |
 | `js/device.js` | Tabs und Geräteerkennung (`pollDevice`). |
-| `js/files.js` | Dateimanager-Tab und Rausziehen auf den PC. |
+| `js/files.js` | Dateimanager-Tab, Teil 1: Orte, Listing-Cache, virtualisierte Liste, Auswahl, Verlauf, Tastatur. |
+| `js/files-actions.js` | Dateimanager-Tab, Teil 2: Ausschneiden/Kopieren/Einfügen, Umbenennen in der Zeile, Verschieben, Löschen, Kontextmenü, Ziehen von Zeilen (in Ordner oder raus auf den PC). |
 | `js/transfer.js` | Senden an den Thor: Drag & Drop, Einsortier-Dialog, Kopier-Warteschlange, Fortschrittsbalken. |
 | `js/saves.js` | Spielkarten, Kartenmenü, Sync-Ablauf. |
 | `js/saves-setup.js` | Spiel hinzufügen (Suche, KI-Vorschlag, Prüfen). |
@@ -81,7 +82,7 @@ alles benutzen.
 
 ```js
 // ui/js/files.js
-S.entries = await call("list_dir", { path: S.cwd });
+const entries = await invoke("list_dir", { path });
 ```
 
 `call` ist ein kleiner Wrapper aus `core.js`. Er ruft `T.core.invoke(cmd, args)` auf und zeigt
@@ -93,11 +94,7 @@ Fehler als Toast an. `invoke` gibt ein **Promise** zurück, das Ergebnis kommt a
 // src/commands.rs
 #[tauri::command]
 pub async fn list_dir(path: String) -> CmdResult<Vec<files::Entry>> {
-    run_blocking(move || {
-        files::save_last(&path);
-        files::listdir(&path)
-    })
-    .await
+    run_blocking(move || files::listdir(&path)).await
 }
 ```
 

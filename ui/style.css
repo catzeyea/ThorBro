@@ -130,24 +130,80 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
 }
 .crumbs button { border: none; background: transparent; padding: 1px 4px; }
 .crumbs .sep { color: var(--dim); }
-.list {
-  flex: 1; min-height: 0; overflow: auto;
+/* File list: a header with sort buttons plus a virtualized list. Rows are absolutely positioned
+   inside .list-sizer with a fixed height (--row-h, same as ROW_HEIGHT_PX in files.js). */
+.list-wrap {
+  --row-h: 30px;
+  position: relative;
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
-  outline: none;
+  overflow: hidden;
 }
+.row-grid, .row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto 84px 150px;
+  gap: 10px; align-items: center;
+}
+.list-head { padding: 0 12px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--dim); }
+.list-head button { border: none; background: transparent; padding: 5px 0; text-align: left; color: inherit; border-radius: 0; }
+.list-head button.num { text-align: right; }
+.list-head button:hover:not(:disabled) { background: transparent; color: var(--text); }
+.list-head button.asc::after { content: " ▲"; font-size: 9px; }
+.list-head button.desc::after { content: " ▼"; font-size: 9px; }
+.list { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; outline: none; contain: strict; }
+.list-sizer { position: relative; width: 100%; }
+.list-msg { position: absolute; inset: 0 0 auto 0; padding: 40px; text-align: center; color: var(--dim); pointer-events: none; }
+.list-wrap.loading::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 40% 100%; background-repeat: no-repeat;
+  animation: listload 1s infinite linear;
+}
+@keyframes listload { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 .row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 12px; border-bottom: 1px solid var(--border);
-  cursor: default;
+  position: absolute; left: 0; right: 0; top: 0;
+  height: var(--row-h); padding: 0 12px;
+  cursor: default; contain: layout style;
 }
-.row:last-child { border-bottom: none; }
 .row:hover { background: var(--panel-2); }
 .row.sel { background: var(--accent-soft); }
-.row .ic { width: 18px; text-align: center; flex: none; }
-.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row .meta { color: var(--dim); font-size: 12px; flex: none; }
+.list:focus .row.focus { box-shadow: inset 0 0 0 1px var(--accent); }
+.row.cut, .row.pending { opacity: .5; }
 .row.faded { opacity: .45; }
-.row .mini { flex: none; padding: 1px 8px; font-size: 12px; }
+.row.drop { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.row .ic { text-align: center; }
+.row .ic::before { content: "📄"; }
+.row.dir .ic::before { content: "📁"; }
+.row.ready .ic::after { content: "⇲"; font-size: 10px; color: var(--accent); margin-left: 1px; }
+.row .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .info { color: var(--dim); font-size: 12px; display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+.row .sz { color: var(--dim); font-size: 12px; text-align: right; white-space: nowrap; }
+.row .dt { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .mini { padding: 1px 8px; font-size: 12px; }
+.row input.rename { padding: 2px 6px; border-radius: 5px; height: calc(var(--row-h) - 6px); }
+@media (max-width: 700px) {
+  .row-grid, .row { grid-template-columns: 20px minmax(0, 1fr) auto 72px; }
+  .row .dt, .list-head .col-date { display: none; }
+}
+.band { position: absolute; z-index: 2; border: 1px solid var(--accent); background: var(--accent-soft); pointer-events: none; }
+.crumbs button.drop { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+body.dragging, body.dragging * { cursor: grabbing !important; }
+.drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 55; pointer-events: none;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow);
+  padding: 4px 10px; font-size: 12px; white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis;
+}
+.drag-ghost.copy { border-color: var(--ok); }
+.ctx {
+  position: fixed; z-index: 45; min-width: 220px; padding: 4px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+}
+.ctx-item { display: flex; justify-content: space-between; gap: 18px; border: none; background: transparent; text-align: left; padding: 6px 10px; border-radius: 6px; }
+.ctx-item:hover:not(:disabled), .ctx-item:focus-visible { background: var(--panel-2); outline: none; }
+.ctx-item kbd { margin: 0; }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 6px; }
 .lib-hint {
   display: flex; gap: 10px; align-items: center;
   padding: 8px 12px; border-radius: var(--radius);
@@ -160,7 +216,6 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
 .esde-row .act { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
 .esde-row .warn { color: var(--warn); }
 .bad { color: var(--danger); }
-.list .placeholder { padding: 40px; text-align: center; color: var(--dim); }
 .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .spacer { flex: 1; }
 .transfer { display: flex; flex-direction: column; gap: 6px; }
@@ -284,5 +339,3 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
 .toast { background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 10px; box-shadow: var(--shadow); max-width: 640px; animation: tin .2s; }
 .toast.err { background: var(--danger); color: #fff; }
 @keyframes tin { from { opacity: 0; transform: translateY(6px); } }
-.row { cursor: default; }
-.row.ready .ic::after { content: "⇲"; font-size: 10px; color: var(--accent, #6af); margin-left: 1px; }
