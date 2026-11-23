@@ -1,6 +1,6 @@
-// ThorBro UI – the Start tab (drop zone, games folder, library tiles), the location sidebar of the
-// file manager and the keyboard shortcuts panel. Pinned folders (on the Start tab
-// and in the sidebar) are drawn by pins.js.
+// ThorBro UI – the Start tab's library tiles, the location sidebar of the file manager and the
+// keyboard shortcuts panel. Pinned folders (on the Start tab and in the sidebar) are drawn by
+// pins.js, the Thor status and ThorBro's mood at the top of the Start tab by status.js.
 // Nothing here loads data or calls Rust: everything comes from what loadPlaces() / refreshLibs()
 // (files.js) already put into S.places and S.libs, and every click goes through the existing
 // navigation (showTab, selectPlace) or presses an existing button. Looks are in style.css.
@@ -32,16 +32,6 @@ function librarySystems() {
     .sort((a, b) => NAME_COLLATOR.compare(a.title, b.title)));
 }
 
-/** A Thor path as the user knows it: "Internal storage / ROMs" for "/sdcard/ROMs". */
-function friendlyPath(path) {
-  const storage = S.places
-    .filter((place) => !place.games && (path === place.path || path.startsWith(place.path + "/")))
-    .sort((a, b) => b.path.length - a.path.length)[0];
-  if (!storage) return path;
-  const rest = path.slice(storage.path.length).split("/").filter(Boolean);
-  return [storage.label, ...rest].join(" / ");
-}
-
 /** Opens a library folder in the file manager (same as picking it in the location drop-down). */
 function openLibraryFolder(lib, path) {
   showTab("files");
@@ -56,9 +46,8 @@ function renderLibraryViews() {
 
 // ---------------------------------------------------------------- Start tab
 
+/** Libraries and pins of the Start tab. The Thor status at the top is drawn by status.js. */
 function renderStart() {
-  const lib = S.libs[0];
-  $("#start-folder").textContent = !S.connected ? "Thor not connected" : lib ? friendlyPath(lib.path) : "Not set up yet";
   const tiles = $("#start-tiles");
   const systems = S.connected ? librarySystems() : [];
   const several = S.libs.length > 1;
@@ -79,13 +68,6 @@ function renderStart() {
   $("#start-tiles-empty").classList.toggle("hidden", !empty);
   renderStartPins(); // pins.js
 }
-
-// "Choose files" is the file manager's Ctrl+O / "Add files …": same dialog, same sorting, and the
-// progress bar is on the Files tab, so that is where it happens.
-$("#start-choose").onclick = () => {
-  showTab("files");
-  pickFilesToSend(); // transfer.js
-};
 
 // ---------------------------------------------------------------- Files sidebar
 

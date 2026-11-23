@@ -20,6 +20,7 @@ mod library;
 mod pcstream;
 mod saves;
 mod settings;
+mod status;
 mod stream;
 mod systems;
 mod unpack;
@@ -40,6 +41,7 @@ fn main() {
         // Every function the UI may call with `invoke(...)` must be listed here.
         .invoke_handler(tauri::generate_handler![
             commands::device,
+            commands::thor_status,
             commands::places,
             commands::refresh_libs,
             commands::add_library,

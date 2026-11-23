@@ -25,11 +25,11 @@
       <button class="tab" data-tab="saves" role="tab">Saves</button>
       <button class="tab" data-tab="stream" role="tab">Stream</button>
     </nav>
-    <div class="status" id="status">
+    <div class="status asleep" id="status">
       <button type="button" class="device" id="device" title="Reconnect">
         <span class="dot"></span><span id="device-text">Looking for Thor …</span>
       </button>
-      <!-- Awake (thorbro-done) when connected, asleep (thorbro-wait-off) when not. -->
+      <!-- Shows ThorBro's mood (js/status.js): asleep (thorbro-wait-off, tilted) without a Thor. -->
       <img class="status-mascot" id="device-mascot" src="assets/mascot/thorbro-wait-off.svg" alt="" width="124" height="124">
     </div>
   </header>
@@ -37,18 +37,24 @@
   <!-- ============================ Start ============================ -->
   <!-- Filled by js/start.js from the libraries the file manager already loaded (S.libs). -->
   <section class="page active" id="page-start">
-    <section class="hero" aria-label="Send games">
-      <div class="hero-main">
-        <img class="hero-logo" src="assets/logo-256.png" alt="" width="112" height="112">
-        <div class="hero-text">
-          <h1>Drop games here</h1>
-          <p>A game, update, DLC or cheat from anywhere. ThorBro finds the right folder on your Thor.</p>
+    <!-- Thor status (js/status.js): ThorBro's mood and one row of drawn gauges. A value that
+         can't be read has no column. Readings only while this page is open and a Thor is connected. -->
+    <section class="thor-status" id="thor-status" aria-label="Thor status">
+      <div class="mood">
+        <img class="mood-img" id="mood-img" src="assets/mascot/thorbro-wait-off.svg" alt="" width="210" height="210">
+        <div class="mood-text" aria-live="polite">
+          <span class="mood-head" id="mood-head">Zzz…</span>
+          <span class="mood-line" id="mood-line">Waiting for my Thor. Plug it in with USB.</span>
         </div>
       </div>
-      <div class="hero-side">
-        <span class="label">games folder</span>
-        <span class="hero-folder" id="start-folder">Thor not connected</span>
-        <button type="button" class="sage" id="start-choose">Choose files</button>
+      <div class="gauges hidden" id="gauges"></div>
+    </section>
+    <!-- Info only, not a button: drops are handled on every page by js/transfer.js (incoming). -->
+    <section class="drop-info" aria-label="Drop files anywhere">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
+      <div class="drop-info-text">
+        <span class="drop-info-title">Drop files anywhere in ThorBro</span>
+        <span class="drop-info-body">On any page. Games, updates and DLC go into the right folder on your Thor, other files into the folder open in Files.</span>
       </div>
     </section>
     <!-- Pinned Thor folders (js/pins.js). Hidden when there are none. -->
@@ -355,6 +361,7 @@
   <script src="js/stream.js"></script>
   <script src="js/pcstream.js"></script>
   <script src="js/pins.js"></script>
+  <script src="js/status.js"></script>
   <script src="js/start.js"></script>
   <script src="js/main.js"></script>
 </body>

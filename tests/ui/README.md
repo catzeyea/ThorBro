@@ -23,6 +23,12 @@ on the regular 3 s poll when the fake Thor (`HARNESS.device` in `stub.js`) is un
 "No Thor connected" card that replaces the file list. After `tests.js`, `run.mjs` resizes the window from 1440 x 900
 down to the minimum 520 x 480 and checks that the header fits (no sideways overflow, about 150 px or less, the Files
 list keeps its room where it had room before).
+The Start page status and ThorBro's mood (Update 7, fake readings in `HARNESS.thorStatus`): the mood priority table and
+its thresholds, "charging" only for status 2, the columns with and without an SD card (RAM takes the SD card's place),
+no CPU column before the second reading, the same mood in the header on every page, readings only while Start is open
+and a Thor is connected, the skipped tick while a reading (or a device poll) still runs, and that the drop line is not a
+button. The Rust side (`src/status.rs`) parses output captured from a real Thor; `cargo test device_status_reads --
+--ignored` reads the connected Thor.
 
 ```sh
 node tests/ui/run.mjs           # needs node >= 22 and firefox

@@ -9,7 +9,7 @@
 //! `saves/`, `stream.rs`, `pcstream/` and `unpack.rs`.
 
 use crate::library::{self, Library};
-use crate::{adb, esde_import, files, pcstream, saves, settings, stream, systems, unpack, util};
+use crate::{adb, esde_import, files, pcstream, saves, settings, status, stream, systems, unpack, util};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -61,6 +61,13 @@ async fn run_blocking<T: Send + 'static>(work: impl FnOnce() -> CmdResult<T> + S
 #[tauri::command]
 pub async fn device() -> CmdResult<adb::Device> {
     run_blocking(|| Ok(adb::device_status())).await
+}
+
+/// Battery, storage, SD card, CPU, RAM and temperature for the Start page (one adb call).
+/// Polled by the UI only while the Start page is open and a Thor is connected.
+#[tauri::command]
+pub async fn thor_status() -> CmdResult<status::ThorStatus> {
+    run_blocking(status::read).await
 }
 
 /// One entry of the location drop-down in the file manager.

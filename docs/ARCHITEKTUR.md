@@ -39,6 +39,7 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `files.rs` | Dateimanager (auflisten, umbenennen, löschen, Größen), Kopier-Warteschlange mit Fortschritt und Abbrechen: PC → Thor, innerhalb des Thor (geprüftes Verschieben), Thor → PC („Copy to PC…“ aus dem File Pool). |
 | `library.rs` | ES-DE-`ROMs`-Ordner finden und gedroppte Dateien einem System zuordnen (Switch-Title-ID, Header-Bytes, Dateiendung). |
 | `unpack.rs` | Archive entpacken (zip/7z/tar in Rust, sonst externes 7z/bsdtar/unrar), Dateinamen FAT-tauglich machen. |
+| `status.rs` | Thor-Status für die Startseite in EINEM `adb shell`-Aufruf: Akku (`dumpsys battery`), interner Speicher und SD-Karte (`df -k`), CPU-Zähler (`/proc/stat`), RAM (`/proc/meminfo`), heißeste CPU-Thermalzone. Nicht lesbare Werte bleiben `None`. |
 | `stream.rs` | Displays erkennen (`scrcpy --list-displays`), pro Display ein scrcpy-Fenster starten und beenden, festhalten, warum ein Stream fehlgeschlagen ist. |
 | `pcstream/` | „Stream PC games to your Thor“ (Unter-Tab von Stream): `sunshine.rs` (Dienststatus, `GET /serverinfo`), `network.rs` (LAN-Adressen, `tailscale`-CLI), `admin.rs` (Sunshine-Admin-API per HTTPS aus Rust, Login im Schlüsselbund des Systems, Pairing, App-Liste), `thor.rs` (Moonlight/Tailscale-App prüfen, „Play on Thor“ und „Send to Thor app“ per `am start`), `profile.rs` (Stream-Profil-JSON, siehe `STREAM-PROFILE.md`). Hintergrund: `PC-STREAMING-RESEARCH.md`. |
 | `util.rs` | Kleinkram: Größen/Zeit formatieren, MD5, Ordner kopieren und spiegeln (Ersatz für rsync), `which`, Prozess mit Timeout. |
@@ -61,7 +62,7 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `style.css` | Aussehen. |
 | `js/core.js` | Tauri-Zugriff (`T`, `invoke`), Helfer (`$`, `esc`, `el`, `human`), globaler Zustand `S`, `toast`, `call`. |
 | `js/dialogs.js` | Modale Dialoge: `modal`, `dialog`, `ask`, `busyModal`, `folderPicker`. |
-| `js/device.js` | Tabs, Geräteerkennung (`pollDevice`) und der Verbindungsstatus im Header (`renderDeviceStatus`: Status-Pille, ThorBro wach / schlafend). |
+| `js/device.js` | Tabs, Geräteerkennung (`pollDevice`) und der Verbindungsstatus im Header (`renderDeviceStatus`: Status-Pille, ThorBro in der aktuellen Stimmung). `pollDevice` läuft nie zweimal gleichzeitig. |
 | `js/files.js` | Dateimanager-Tab, Teil 1: Orte, Listing-Cache, virtualisierte Liste, Auswahl, Verlauf, Tastatur. |
 | `js/files-actions.js` | Dateimanager-Tab, Teil 2: Ausschneiden/Kopieren/Einfügen, Umbenennen in der Zeile, Verschieben, Löschen, Kontextmenüs, Ziehen von Zeilen (in Ordner oder in den File Pool). |
 | `js/transfer.js` | Senden an den Thor: Drag & Drop mit Drop-Karte, Ctrl+O / „Add files …“, Einsortier-Dialog, Kopier-Warteschlange, Fortschrittsleiste (zeigt die „transfer“-Events, auch „file X of Y“). |
@@ -72,8 +73,9 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `js/stream.js` | Stream-Tab, Unter-Tab „Mirror Thor screens“: drei Kacheln (beide / oben / unten, feste IDs 0 und 4), Stopp, Fehler; die scrcpy-Display-Erkennung für die Bildschirmauswahl. |
 | `js/pcstream.js` | Stream-Tab, Unter-Tab „Stream PC games“ (Status-Chips, „Play on Thor“, „Send to Thor app“, Pairing) und die Help-Seite (Sunshine und Login, Adressen, Apps auf dem Thor, Bildschirmauswahl, Checkliste, Stream-Profil). |
 | `js/pins.js` | Angeheftete Thor-Ordner: Pin-Knopf in der Pfadleiste (Strg+D), Karte „pinned“ in der Ortsleiste, Zeile „pinned“ im Start-Tab, Zustand „not found“ (`pins`, `add_pin`, `remove_pin`, `pins_found`; gespeichert in `settings.json`). |
-| `js/start.js` | Start-Tab (Ablagefläche, Bibliotheks-Kacheln), die Ortsleiste des Dateimanagers, die Tastenkürzel-Liste. |
-| `js/main.js` | Start: öffnet Start (bei jedem Start, der letzte Tab wird nicht gemerkt), erste Geräteabfrage und Timer. |
+| `js/status.js` | Thor-Status im Start-Tab (gezeichnete Anzeigen) und ThorBros Stimmung (Prioritätstabelle und Schwellen in einem Konstantenblock), gezeigt im Start-Tab und im Header. Fragt `thor_status` nur ab, solange Start offen und ein Thor verbunden ist; läuft die letzte Abfrage noch, fällt ein Takt aus. |
+| `js/start.js` | Bibliotheks-Kacheln im Start-Tab, die Ortsleiste des Dateimanagers, die Tastenkürzel-Liste. |
+| `js/main.js` | Start: öffnet Start (bei jedem Start, der letzte Tab wird nicht gemerkt), erste Geräteabfrage und Timer (Gerät, Stream, Status der Startseite). |
 
 Die JS-Dateien sind klassische `<script>`-Dateien ohne `type="module"`. Sie teilen sich einen
 globalen Gültigkeitsbereich, so als wären sie hintereinander in eine Datei kopiert. Deshalb
