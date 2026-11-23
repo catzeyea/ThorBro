@@ -43,6 +43,7 @@ For screen mirroring it starts `scrcpy`.
 | `settings.rs` | `<config dir>/thorBro/settings.json` (`%APPDATA%`, `~/Library/Application Support`, `~/.config`): custom game library folders, systems picked per folder and the last used stream options per display. |
 | `unpack.rs` | Extracting archives (zip/7z/tar in Rust, otherwise external 7z/bsdtar/unrar), making file names FAT-safe. |
 | `stream.rs` | Detecting the displays (`scrcpy --list-displays`), starting and stopping one scrcpy window per display, recording why a stream failed. |
+| `pcstream/` | "Stream PC games to your Thor" (sub-tab of Stream): `sunshine.rs` (service state, `GET /serverinfo`), `network.rs` (LAN addresses, `tailscale` CLI), `admin.rs` (Sunshine admin API over HTTPS from Rust, login in the OS keychain, pairing, app list), `thor.rs` (Moonlight/Tailscale app check, "Play on Thor" and "Send to Thor app" via `am start`), `profile.rs` (stream profile JSON, see `STREAM-PROFILE.md`). Background: `PC-STREAMING-RESEARCH.md`. |
 | `util.rs` | Small helpers: formatting sizes/times, MD5, copying and mirroring folders (replacement for rsync), `which`, running a process with a timeout. |
 | `saves/mod.rs` | Overview of the save module, shared helpers, re-exports. |
 | `saves/config.rs` | Reading and writing `games.json`, data and backup folders. |
@@ -70,7 +71,8 @@ For screen mirroring it starts `scrcpy`.
 | `js/saves.js` | Game cards, card menu, sync flow. |
 | `js/saves-setup.js` | Adding a game (search, AI suggestion, check). |
 | `js/saves-import.js` | Importing a save. |
-| `js/stream.js` | Stream tab: one card per detected display, Stream both / Stop all, quick start. |
+| `js/stream.js` | Stream tab, sub-tab "Mirror Thor screens": one card per detected display, Stream both / Stop all, quick start. |
+| `js/pcstream.js` | Stream tab, sub-tab "Stream PC games to your Thor": Sunshine / address / Thor checks, Sunshine login, pairing, game list with "Play on Thor", checklist, stream profile with "Send to Thor app". |
 | `js/main.js` | Startup: first device poll and timers. |
 
 The JS files are classic `<script>` files without `type="module"`. They share one global scope,

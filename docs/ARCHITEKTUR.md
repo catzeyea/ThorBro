@@ -40,6 +40,7 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `library.rs` | ES-DE-`ROMs`-Ordner finden und gedroppte Dateien einem System zuordnen (Switch-Title-ID, Header-Bytes, Dateiendung). |
 | `unpack.rs` | Archive entpacken (zip/7z/tar in Rust, sonst externes 7z/bsdtar/unrar), Dateinamen FAT-tauglich machen. |
 | `stream.rs` | Displays erkennen (`scrcpy --list-displays`), pro Display ein scrcpy-Fenster starten und beenden, festhalten, warum ein Stream fehlgeschlagen ist. |
+| `pcstream/` | „Stream PC games to your Thor“ (Unter-Tab von Stream): `sunshine.rs` (Dienststatus, `GET /serverinfo`), `network.rs` (LAN-Adressen, `tailscale`-CLI), `admin.rs` (Sunshine-Admin-API per HTTPS aus Rust, Login im Schlüsselbund des Systems, Pairing, App-Liste), `thor.rs` (Moonlight/Tailscale-App prüfen, „Play on Thor“ und „Send to Thor app“ per `am start`), `profile.rs` (Stream-Profil-JSON, siehe `STREAM-PROFILE.md`). Hintergrund: `PC-STREAMING-RESEARCH.md`. |
 | `util.rs` | Kleinkram: Größen/Zeit formatieren, MD5, Ordner kopieren und spiegeln (Ersatz für rsync), `which`, Prozess mit Timeout. |
 | `saves/mod.rs` | Überblick über das Spielstand-Modul, gemeinsame Helfer, Re-Exports. |
 | `saves/config.rs` | `games.json` lesen und schreiben, Daten- und Backup-Ordner. |
@@ -67,7 +68,8 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `js/saves.js` | Spielkarten, Kartenmenü, Sync-Ablauf. |
 | `js/saves-setup.js` | Spiel hinzufügen (Suche, KI-Vorschlag, Prüfen). |
 | `js/saves-import.js` | Spielstand importieren. |
-| `js/stream.js` | Stream-Tab: eine Karte pro erkanntem Display, „Stream both“ / „Stop all“, Schnellstart. |
+| `js/stream.js` | Stream-Tab, Unter-Tab „Mirror Thor screens“: eine Karte pro erkanntem Display, „Stream both“ / „Stop all“, Schnellstart. |
+| `js/pcstream.js` | Stream-Tab, Unter-Tab „Stream PC games to your Thor“: Sunshine-, Adress- und Thor-Prüfung, Sunshine-Login, Pairing, Spieleliste mit „Play on Thor“, Checkliste, Stream-Profil mit „Send to Thor app“. |
 | `js/main.js` | Start: erste Geräteabfrage und Timer. |
 
 Die JS-Dateien sind klassische `<script>`-Dateien ohne `type="module"`. Sie teilen sich einen

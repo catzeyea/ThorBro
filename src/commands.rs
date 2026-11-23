@@ -6,10 +6,10 @@
 //! An `Err(String)` arrives in JavaScript as a rejected promise with that text.
 //!
 //! The commands are thin wrappers: the real work lives in `adb.rs`, `files.rs`, `library.rs`,
-//! `saves/`, `stream.rs` and `unpack.rs`.
+//! `saves/`, `stream.rs`, `pcstream/` and `unpack.rs`.
 
 use crate::library::{self, Library};
-use crate::{adb, esde_import, files, saves, settings, stream, systems, unpack, util};
+use crate::{adb, esde_import, files, pcstream, saves, settings, stream, systems, unpack, util};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -635,4 +635,108 @@ pub fn stream_stop(state: State<'_, AppState>) {
 #[tauri::command]
 pub fn stream_status(state: State<'_, AppState>) -> stream::StreamStatus {
     state.streams.status()
+}
+
+// --- Stream PC games (Sunshine on the PC, Moonlight on the Thor) -------------------------------
+
+/// Sunshine status (service, `/serverinfo`) and the PC's LAN / Tailscale addresses. Read-only.
+#[tauri::command]
+pub async fn pc_stream_detect() -> CmdResult<pcstream::PcStatus> {
+    run_blocking(|| Ok(pcstream::detect())).await
+}
+
+/// Opens one of the official pages from `pcstream::LINKS` (by id) in the browser.
+#[tauri::command]
+pub fn pc_stream_open_link(id: String) -> CmdResult<()> {
+    let url = pcstream::link_url(&id).ok_or_else(|| format!("Unknown link: {id}"))?;
+    pcstream::open_url(url)
+}
+
+/// Opens Sunshine's own web UI (https://localhost:<admin port>) in the browser.
+#[tauri::command]
+pub fn pc_stream_open_web_ui() -> CmdResult<()> {
+    let port = pcstream::sunshine::admin_port(pcstream::sunshine::configured_port());
+    pcstream::open_url(&format!("https://localhost:{port}"))
+}
+
+/// Is the Thor connected, and are Moonlight and Tailscale installed on it? Read-only (adb).
+#[tauri::command]
+pub async fn pc_stream_thor_apps() -> CmdResult<pcstream::thor::ThorApps> {
+    run_blocking(|| Ok(pcstream::thor::thor_apps())).await
+}
+
+/// Admin API port of the local Sunshine (from sunshine.conf).
+fn sunshine_admin_port() -> u16 {
+    pcstream::sunshine::admin_port(pcstream::sunshine::configured_port())
+}
+
+/// Is a Sunshine login stored, and does it work? Never returns the password.
+#[tauri::command]
+pub async fn pc_stream_login_status() -> CmdResult<pcstream::admin::LoginStatus> {
+    run_blocking(|| Ok(pcstream::admin::login_status(sunshine_admin_port()))).await
+}
+
+/// Tests an existing Sunshine login and stores it in the OS keychain if it works.
+#[tauri::command]
+pub async fn pc_stream_save_login(username: String, password: String) -> CmdResult<pcstream::admin::LoginStatus> {
+    run_blocking(move || pcstream::admin::save_login(sunshine_admin_port(), &pcstream::admin::Login { username, password })).await
+}
+
+/// Removes the stored Sunshine login from the keychain.
+#[tauri::command]
+pub async fn pc_stream_forget_login() -> CmdResult<()> {
+    run_blocking(pcstream::admin::forget_login).await
+}
+
+/// Creates a new Sunshine web UI login with `sunshine --creds` (replaces an existing one) and
+/// stores it in the keychain. Only called after the user confirmed it in the UI.
+#[tauri::command]
+pub async fn pc_stream_create_login(username: String, password: String) -> CmdResult<String> {
+    run_blocking(move || pcstream::admin::create_login(&pcstream::admin::Login { username, password })).await
+}
+
+/// Restarts the Sunshine user service (Linux only). Ends a running stream.
+#[tauri::command]
+pub async fn pc_stream_restart_sunshine() -> CmdResult<()> {
+    run_blocking(pcstream::admin::restart_service).await
+}
+
+/// Moonlight clients waiting for a PIN (`GET /api/pin`); `supported: false` on old Sunshine.
+#[tauri::command]
+pub async fn pc_stream_pairings() -> CmdResult<pcstream::admin::Pairings> {
+    run_blocking(|| pcstream::admin::pending_pairings(sunshine_admin_port())).await
+}
+
+/// Sends the PIN Moonlight shows on the Thor (`POST /api/pin`). Waits until Moonlight finished
+/// the handshake; returns whether pairing worked. `pairing_id` is None for old Sunshine versions.
+#[tauri::command]
+pub async fn pc_stream_submit_pin(pairing_id: Option<String>, pin: String, name: String) -> CmdResult<bool> {
+    run_blocking(move || pcstream::admin::submit_pin(sunshine_admin_port(), pairing_id.as_deref(), &pin, &name)).await
+}
+
+/// Sunshine's app names (`GET /api/apps`).
+#[tauri::command]
+pub async fn pc_stream_apps() -> CmdResult<Vec<String>> {
+    run_blocking(|| pcstream::admin::app_names(sunshine_admin_port())).await
+}
+
+/// "Play on Thor": starts the Sunshine app `app_name` in Moonlight on the Thor (adb, Moonlight's
+/// `ShortcutTrampoline`). `display`: experimental, a display id from the screen detection.
+#[tauri::command]
+pub async fn pc_stream_play(app_name: String, display: Option<u32>) -> CmdResult<pcstream::thor::PlayResult> {
+    run_blocking(move || pcstream::thor::play(&app_name, display)).await
+}
+
+/// The stream profile JSON for the ThorBro app on the Thor (`docs/STREAM-PROFILE.md`). No credentials.
+#[tauri::command]
+pub async fn pc_stream_profile() -> CmdResult<pcstream::ProfileAnswer> {
+    run_blocking(pcstream::stream_profile).await
+}
+
+/// "Send to Thor app": builds the stream profile and hands it to the ThorBro app on the Thor with
+/// `am start ... --es profile_b64 <base64>` (adb). Only says that Android got it; whether the app
+/// accepted it is shown in the app.
+#[tauri::command]
+pub async fn pc_stream_send_profile() -> CmdResult<pcstream::thor::SendProfileResult> {
+    run_blocking(pcstream::thor::send_profile).await
 }

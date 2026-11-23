@@ -17,6 +17,7 @@ mod commands;
 mod esde_import;
 mod files;
 mod library;
+mod pcstream;
 mod saves;
 mod settings;
 mod stream;
@@ -82,7 +83,22 @@ fn main() {
             commands::stream_start,
             commands::stream_stop_display,
             commands::stream_stop,
-            commands::stream_status
+            commands::stream_status,
+            commands::pc_stream_detect,
+            commands::pc_stream_open_link,
+            commands::pc_stream_open_web_ui,
+            commands::pc_stream_thor_apps,
+            commands::pc_stream_login_status,
+            commands::pc_stream_save_login,
+            commands::pc_stream_forget_login,
+            commands::pc_stream_create_login,
+            commands::pc_stream_restart_sunshine,
+            commands::pc_stream_pairings,
+            commands::pc_stream_submit_pin,
+            commands::pc_stream_apps,
+            commands::pc_stream_play,
+            commands::pc_stream_profile,
+            commands::pc_stream_send_profile
         ])
         .on_window_event(|window, event| {
             // Close the scrcpy windows together with ThorBro.

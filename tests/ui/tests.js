@@ -329,6 +329,134 @@
     await until(() => document.querySelector('.stream-btn[data-which="top"]').classList.contains("running"));
     check("stream: quick start still works", callsOf("stream_start").pop()?.args.which === "top");
     $("#stream-stop").click();
+
+    // ---- stream tab, sub-tab "Stream PC games to your Thor"
+    const pcText = (id) => document.querySelector(`#${id} .pc-body`).textContent;
+    check("pc: mirror sub-tab is the default", $("#stream-sub-mirror").classList.contains("active") && !$("#stream-sub-pc").classList.contains("active"));
+    showStreamSub("pc");
+    check("pc: sub-tab switch shows the page and hides mirroring", $("#stream-sub-pc").classList.contains("active") && !$("#stream-sub-mirror").classList.contains("active"));
+    check("pc: detection, Thor apps and login are checked on opening",
+      await until(() => callsOf("pc_stream_detect").length && callsOf("pc_stream_thor_apps").length && callsOf("pc_stream_login_status").length && PCS.login));
+    await until(() => pcText("pc-sunshine").includes("Sunshine is running"));
+    check("pc: Sunshine status with host ID", pcText("pc-sunshine").includes("0123ABCD-4567-89EF-0123-456789ABCDEF") && pcText("pc-sunshine").includes("idle"), pcText("pc-sunshine"));
+    check("pc: LAN address recommended, docker marked virtual, Tailscale missing is only a note",
+      pcText("pc-addresses").includes("192.168.1.20") && pcText("pc-addresses").includes("use this") && pcText("pc-addresses").includes("docker0, virtual") &&
+      pcText("pc-addresses").includes("LAN addresses only"), pcText("pc-addresses"));
+    check("pc: Moonlight missing shows official links", pcText("pc-thor").includes("not installed") && !!document.querySelector('#pc-thor [data-link="moonlight_play"]'), pcText("pc-thor"));
+    document.querySelector('#pc-thor [data-link="moonlight_play"]').click();
+    await until(() => callsOf("pc_stream_open_link").length);
+    check("pc: link buttons send only an id", callsOf("pc_stream_open_link").pop()?.args.id === "moonlight_play");
+    check("pc: pairing and games wait for a login", pcText("pc-pair").includes("Save a working Sunshine login") && pcText("pc-games").includes("save a working Sunshine login"));
+    check("pc: password field is a password input", $("#pc-pass").type === "password");
+
+    $("#pc-user").value = "admin"; $("#pc-pass").value = "wrong";
+    $("#pc-save-login").click();
+    await until(() => callsOf("pc_stream_save_login").length === 1);
+    await sleep(80);
+    check("pc: wrong login is not accepted", PCS.login.state === "not_stored" && [...document.querySelectorAll(".toast.err")].some((t) => t.textContent.includes("rejected")));
+    $("#pc-pass").value = "secret";
+    $("#pc-save-login").click();
+    check("pc: good login saved, games and pairings load",
+      await until(() => PCS.login.state === "ok" && callsOf("pc_stream_apps").length && callsOf("pc_stream_pairings").length && PCS.apps), JSON.stringify(PCS.login));
+    check("pc: login card shows user and Sunshine version", pcText("pc-login").includes("logged in as admin") && pcText("pc-login").includes("2026.914.233613"), pcText("pc-login"));
+    check("pc: Play disabled while Moonlight is missing", [...document.querySelectorAll("#pc-games [data-play]")].every((b) => b.disabled) && pcText("pc-games").includes("Install Moonlight"));
+
+    H.pc.thor.moonlight = { package: "com.limelight", version: "12.2" };
+    await pcThorApps();
+    const playButtons = () => [...document.querySelectorAll("#pc-games [data-play]")];
+    check("pc: games listed with Play buttons once Moonlight is there", playButtons().length === 2 && playButtons().every((b) => !b.disabled) && pcText("pc-games").includes("Tom's \"Game\""));
+    playButtons()[1].click();
+    await until(() => callsOf("pc_stream_play").length);
+    check("pc: Play sends the exact app name and no display by default",
+      callsOf("pc_stream_play").pop()?.args.appName === "Tom's \"Game\"" && callsOf("pc_stream_play").pop()?.args.display === null, JSON.stringify(callsOf("pc_stream_play").pop()));
+    // The display picker reuses the mirror tab's scrcpy detection (left empty by the tests above).
+    H.stream.displays = [
+      { id: 0, width: 1920, height: 1080, label: "Top screen", options: { max_size: 0, bitrate_mbps: 16, always_on_top: false } },
+      { id: 4, width: 1240, height: 1080, label: "Bottom screen", options: { max_size: 0, bitrate_mbps: 16, always_on_top: false } },
+    ];
+    $("#pc-display-detect").click();
+    check("pc: display picker filled from the screen detection",
+      await until(() => document.querySelectorAll("#pc-display option").length === 3), document.querySelectorAll("#pc-display option").length);
+    $("#pc-display").value = "4"; $("#pc-display").dispatchEvent(new Event("change"));
+    playButtons()[0].click();
+    await until(() => callsOf("pc_stream_play").length === 2);
+    check("pc: experimental display id from the screen detection is passed", callsOf("pc_stream_play").pop()?.args.display === 4);
+    check("pc: Moonlight dialogs explained", pcText("pc-games").includes("PC not paired") && pcText("pc-games").includes("Provided App is not valid"));
+
+    check("pc: no device waiting yet -> Pair disabled, address advice shown",
+      pcText("pc-pair").includes("no device waiting") && $("#pc-pair-go").disabled && pcText("pc-pair").includes("192.168.1.20") && pcText("pc-pair").includes("mDNS"), pcText("pc-pair"));
+    H.pc.pairings = { supported: true, pairings: [{ id: "0123456789abcdef0123456789abcdef", name: "Thor", address: "192.168.1.30" }] };
+    pcPoll();
+    check("pc: a waiting Moonlight appears via polling", await until(() => !$("#pc-pair-go").disabled && pcText("pc-pair").includes("192.168.1.30")));
+    $("#pc-pin").value = "12a4";
+    $("#pc-pair-go").click();
+    await sleep(30);
+    check("pc: invalid PIN rejected in the UI", !callsOf("pc_stream_submit_pin").length);
+    $("#pc-pin").value = "0042";
+    $("#pc-pair-go").click();
+    await until(() => callsOf("pc_stream_submit_pin").length);
+    const pinCall = callsOf("pc_stream_submit_pin").pop().args;
+    check("pc: PIN sent with pairing id and name", pinCall.pairingId === "0123456789abcdef0123456789abcdef" && pinCall.pin === "0042" && pinCall.name === "Thor", JSON.stringify(pinCall));
+    H.pc.pairings = { supported: false, pairings: [] };
+    await pcLoadPairings();
+    check("pc: old Sunshine -> clear message, PIN sent without pairing id",
+      pcText("pc-pair").includes("older than v2026.906.222525") && !$("#pc-pair-go").disabled, pcText("pc-pair"));
+    $("#pc-pin").value = "1234";
+    $("#pc-pair-go").click();
+    await until(() => callsOf("pc_stream_submit_pin").length === 2);
+    check("pc: legacy PIN call has pairingId null", callsOf("pc_stream_submit_pin").pop().args.pairingId === null);
+
+    $("#pc-profile-show").click();
+    await until(() => !!document.querySelector(".pc-profile-json"));
+    check("pc: stream profile shown read-only", document.querySelector(".pc-profile-json").readOnly && document.querySelector(".pc-profile-json").value.includes("thorbro.stream-profile"));
+    document.querySelector("#modal .modal-foot button").click();
+    await sleep(20);
+
+    // "Send to Thor app": success can only say "sent", never "accepted"; the app reports "rejected" itself.
+    const profileStatus = () => $("#pc-profile-status");
+    check("pc: send status hidden before sending", profileStatus().classList.contains("hidden"));
+    $("#pc-profile-send").click();
+    check("pc: Send to Thor app disables the button while sending", $("#pc-profile-send").disabled);
+    await until(() => callsOf("pc_stream_send_profile").length === 1 && !$("#pc-profile-send").disabled);
+    check("pc: Send to Thor app sends no arguments (profile is built in Rust)",
+      Object.keys(callsOf("pc_stream_send_profile").pop().args || {}).length === 0);
+    check("pc: send success says sent, not accepted, and points to rejected on the Status tab",
+      !profileStatus().classList.contains("hidden") && !profileStatus().classList.contains("warn") &&
+      profileStatus().textContent.includes("sent to the ThorBro app (2 games)") && profileStatus().textContent.includes("Status tab") &&
+      profileStatus().textContent.includes('"rejected"') && profileStatus().textContent.includes("can't see whether the app accepted it") &&
+      !/was accepted|profile accepted/i.test(profileStatus().textContent),
+      profileStatus().textContent);
+    H.pc.sendProfile = { ...H.pc.sendProfile, games: 0, note: "Without the game list: no Sunshine login is stored" };
+    $("#pc-profile-send").click();
+    await until(() => callsOf("pc_stream_send_profile").length === 2 && !$("#pc-profile-send").disabled);
+    check("pc: send without game list shows the note as warning",
+      profileStatus().classList.contains("warn") && profileStatus().textContent.includes("0 games") && profileStatus().textContent.includes("Without the game list"),
+      profileStatus().textContent);
+    const sendErrorToasts = document.querySelectorAll(".toast.err").length;
+    H.fail.pc_stream_send_profile = "The ThorBro app is not installed on the Thor. Install the ThorBro APK on the Thor first (for example with \"adb install <path to the APK>\"), then send the profile again.";
+    $("#pc-profile-send").click();
+    await until(() => callsOf("pc_stream_send_profile").length === 3 && !$("#pc-profile-send").disabled);
+    check("pc: app not installed -> clear message with APK hint, error toast, button usable again",
+      profileStatus().classList.contains("warn") && profileStatus().textContent.startsWith("Not sent:") &&
+      profileStatus().textContent.includes("not installed") && profileStatus().textContent.includes("APK") &&
+      !profileStatus().textContent.includes("sent to the ThorBro app") &&
+      document.querySelectorAll(".toast.err").length > sendErrorToasts && !$("#pc-profile-send").disabled,
+      profileStatus().textContent);
+    H.fail.pc_stream_send_profile = "The stream profile is too large to send over adb (30000 characters encoded, the limit is 24576). It has 1000 games; remove apps you don't stream from Sunshine's app list and send it again.";
+    $("#pc-profile-send").click();
+    await until(() => callsOf("pc_stream_send_profile").length === 4 && !$("#pc-profile-send").disabled);
+    check("pc: profile over the size limit -> readable message", profileStatus().textContent.includes("too large") && profileStatus().textContent.includes("24576"), profileStatus().textContent);
+    delete H.fail.pc_stream_send_profile;
+
+    H.pc.status.sunshine.server = null;
+    H.pc.status.sunshine.error = "Sunshine is not answering on port 47989";
+    H.pc.status.sunshine.service = { state: "not_installed", detail: "not-found" };
+    H.pc.status.sunshine.executable = null;
+    await pcDetect();
+    check("pc: Sunshine missing -> install links, Play blocked",
+      pcText("pc-sunshine").includes("Sunshine not found") && !!document.querySelector('#pc-sunshine [data-link="sunshine_getting_started"]') && playButtons().every((b) => b.disabled));
+    showStreamSub("mirror");
+    check("pc: back to mirroring keeps the scrcpy cards", $("#stream-sub-mirror").classList.contains("active") && cards().length > 0);
     showTab("files");
 
     check("no JS errors logged", !(H.logs || []).length, (H.logs || []).join(" | "));

@@ -6,6 +6,9 @@ the file manager's behavior (`tests.js`): cache, request ordering, virtualizatio
 selection, rename/new folder/move/delete with rollback, cut/copy/paste, context menu, drag & drop.
 For the stream tab (fake scrcpy in `stub.js`): display cards, per-display start/stop with options,
 "Stream both", failures on the card, the one-display hint, detection errors and the quick start.
+For the "Stream PC games" sub-tab (fake Sunshine/Moonlight in `stub.js`): status cards, login save/reject,
+pairing with and without `pairing_id`, game list, "Play on Thor" with the experimental display id, stream profile,
+"Send to Thor app" (sent / note / app not installed / too large).
 
 ```sh
 node tests/ui/run.mjs           # needs node >= 22 and firefox

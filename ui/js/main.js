@@ -7,3 +7,4 @@ const POLL_INTERVAL_MS = 3000;
 pollDevice(true);
 setInterval(() => pollDevice(false), POLL_INTERVAL_MS);
 setInterval(() => { if (S.tab === "stream") streamStatus(); }, POLL_INTERVAL_MS);
+setInterval(() => { if (S.tab === "stream" && PCS.sub === "pc") pcPoll(); }, POLL_INTERVAL_MS);
