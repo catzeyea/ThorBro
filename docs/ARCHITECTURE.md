@@ -64,7 +64,7 @@ For screen mirroring it starts `scrcpy`.
 | `style.css` | Look and feel. |
 | `js/core.js` | Tauri access (`T`, `invoke`), helpers (`$`, `esc`, `el`, `human`), global state `S`, `toast`, `call`. |
 | `js/dialogs.js` | Modal dialogs: `modal`, `dialog`, `ask`, `busyModal`, `folderPicker`. |
-| `js/device.js` | Tabs and device detection (`pollDevice`). |
+| `js/device.js` | Tabs, device detection (`pollDevice`) and the connection state in the header (`renderDeviceStatus`: status pill, ThorBro awake / asleep). |
 | `js/files.js` | File manager tab, part 1: locations, listing cache, virtualized list, selection, history, keyboard. |
 | `js/files-actions.js` | File manager tab, part 2: cut/copy/paste, rename in place, move, delete, context menus, dragging rows (into folders or into the file pool). |
 | `js/transfer.js` | Sending to the Thor: drag & drop with the drop card, Ctrl+O / "Add files …", sort dialog, copy queue, transfer strip (shows the "transfer" events, incl. "file X of Y"). |
@@ -76,7 +76,7 @@ For screen mirroring it starts `scrcpy`.
 | `js/pcstream.js` | Stream tab, sub-tab "Stream PC games" (status chips, "Play on Thor", "Send to Thor app", pairing) and the Help page (Sunshine and login, addresses, Thor apps, screen picker, checklist, stream profile). |
 | `js/pins.js` | Pinned Thor folders: pin button in the path bar (Ctrl+D), "pinned" card in the sidebar, "pinned" row on the Start tab, "not found" state (`pins`, `add_pin`, `remove_pin`, `pins_found`). |
 | `js/start.js` | Start tab (drop zone, library tiles), the file manager's location sidebar, its keyboard shortcuts panel. |
-| `js/main.js` | Startup: first device poll and timers. |
+| `js/main.js` | Startup: opens Start (every launch, the last tab is not remembered), first device poll and timers. |
 
 The JS files are classic `<script>` files without `type="module"`. They share one global scope,
 as if they had been pasted into one file one after another. That means: code that runs
@@ -176,13 +176,15 @@ being dragged from the system onto the window (`transfer.js`).
    - status `device` → connected. The model name comes from `adb shell getprop ro.product.model`.
 5. **Response.** The result `Device { connected, message }` becomes the JSON
    `{ "connected": true, "message": "AYN Thor" }`.
-6. **Display.** `pollDevice` colors the dot in the top right and sets the text. If `connected`
-   changed, this follows:
+6. **Display.** `pollDevice` calls `renderDeviceStatus()` on every answer: the pill in the header
+   shows "Connected: <model>" or "Not connected" (the reason from step 4 is in its tooltip), and
+   the ThorBro next to it is awake (`thorbro-done.svg`) or asleep (`thorbro-wait-off.svg`). If
+   `connected` changed, this follows:
    - connected: `loadPlaces(true)` → `invoke("places")` → `commands::places` → `adb::storages()`
      (internal storage and SD cards) and `library::find_libraries()` (one shell script per
      storage reads all `ROMs/*/systeminfo.txt`). The libraries end up in `AppState.libs` and in
      `S.libs`. Then the file manager opens the folder used last.
-   - disconnected: the file list shows "No Thor connected".
+   - disconnected: the file list is replaced by the "No Thor connected" card.
    - In the Saves tab the game cards are re-checked as well.
 
 ## Example 2: Sorting a game in by drop

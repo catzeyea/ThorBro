@@ -20,6 +20,61 @@
   const typeInto = (input, value, finalKey = "Enter") => { input.value = value; input.dispatchEvent(new KeyboardEvent("keydown", { key: finalKey, bubbles: true })); };
 
   try {
+    // ---- launch page (Update 6): every launch lands on Start, the last tab is not remembered
+    const activePages = () => [...document.querySelectorAll(".page.active")].map((p) => p.id);
+    const activeTabs = () => [...document.querySelectorAll(".tab.active")].map((b) => b.dataset.tab);
+    check("launch: Start is the open page and the active tab",
+      S.tab === "start" && activePages().join() === "page-start" && activeTabs().join() === "start", `${S.tab} ${activePages()} ${activeTabs()}`);
+    let storedKeys = [];
+    try { storedKeys = Object.keys(localStorage); } catch (_) { /* no storage: nothing remembered either */ }
+    check("launch: the open tab is not stored anywhere", !storedKeys.some((k) => /tab|page/i.test(k)), storedKeys.join());
+
+    // ---- header (Update 6): one shared header, connected state at launch (stub: Thor connected)
+    const header = $(".topbar");
+    const statusMascot = () => $("#device-mascot").getAttribute("src");
+    await until(() => S.connected);
+    check("header: exactly one header, outside the pages", document.querySelectorAll("header").length === 1 && !header.closest(".page"));
+    check("header: wordmark 'ThorBro' and three ThorBros (sage, orange, coral SVGs)",
+      $(".brand-word").textContent === "ThorBro" &&
+      [...document.querySelectorAll(".brand-bros .bro")].map((i) => i.getAttribute("src")).join() ===
+        "assets/mascot/thorbro-bro-sage.svg,assets/mascot/thorbro-bro-orange.svg,assets/mascot/thorbro-bro-coral.svg",
+      [...document.querySelectorAll(".brand-bros .bro")].map((i) => i.getAttribute("src")).join());
+    check("header: no old square logo in the header", !header.querySelector(".brand-logo, img[src*='logo-256']"));
+    check("header: wordmark is semi-transparent and bold", getComputedStyle($(".brand-word")).opacity === "0.72" && Number(getComputedStyle($(".brand-word")).fontWeight) >= 700,
+      `${getComputedStyle($(".brand-word")).opacity} ${getComputedStyle($(".brand-word")).fontWeight}`);
+    check("header: ThorBros are in front of the wordmark",
+      getComputedStyle($(".brand-bros")).zIndex === "1" && getComputedStyle($(".brand-bros")).position === "relative");
+    check("header connected: pill 'Connected: <model>', solid outline, green dot",
+      $("#device-text").textContent === "Connected: Thor (fake)" && $("#device").classList.contains("on") &&
+      getComputedStyle($("#device")).borderTopStyle === "solid" && getComputedStyle($("#device .dot")).backgroundColor !== "rgba(0, 0, 0, 0)",
+      `${$("#device-text").textContent} ${getComputedStyle($("#device")).borderTopStyle}`);
+    check("header connected: ThorBro awake (thorbro-done), not tilted",
+      statusMascot() === "assets/mascot/thorbro-done.svg" && getComputedStyle($("#device-mascot")).transform === "none",
+      `${statusMascot()} ${getComputedStyle($("#device-mascot")).transform}`);
+    {
+      const seen = [];
+      for (const tab of ["start", "files", "saves", "stream"]) {
+        showTab(tab);
+        const box = header.getBoundingClientRect();
+        if (box.height > 0 && $(".brand-bros").getBoundingClientRect().height > 0 && $("#device-mascot").getBoundingClientRect().height > 0) seen.push(tab);
+      }
+      // Stream's sub-pages (PC games, Mirror, Help) live inside #page-stream, below the shared header.
+      check("header: shown on Start, Files, Saves and Stream", seen.join() === "start,files,saves,stream", seen.join());
+    }
+    {
+      // Wordmark, nav and status must sit in one row and fit in the test window (headless Firefox's
+      // own default size). run.mjs checks the header at other window sizes afterwards.
+      const rects = [$(".brand"), $(".tabs"), $(".status")].map((n) => n.getBoundingClientRect());
+      const oneRow = rects.every((r) => r.top < rects[1].bottom && r.bottom > rects[1].top);
+      const hb = header.getBoundingClientRect();
+      check("header: one row, no overflow, about 150 px or less in the test window",
+        oneRow && hb.height <= 160 && header.scrollWidth <= header.clientWidth && document.documentElement.scrollWidth <= innerWidth,
+        `${innerWidth}x${innerHeight} oneRow=${oneRow} h=${Math.round(hb.height)} sw=${header.scrollWidth}/${header.clientWidth}`);
+      check("header: pill text not cut off in the test window", $("#device-text").scrollWidth <= $("#device-text").clientWidth,
+        `${$("#device-text").scrollWidth}/${$("#device-text").clientWidth}`);
+    }
+    showTab("files");
+
     // ---- initial load
     check("initial listing shown", await until(() => S.cwd === "/sdcard" && FM.status === "ready" && S.shown.length === 6), JSON.stringify(names()));
     check("folders first, natural name order", names().join(",") === "big,Download,Music,a.txt,B.iso,c.zip", names().join(","));
@@ -992,6 +1047,49 @@
     const afterPress = new Event("selectstart", { bubbles: true, cancelable: true });
     pressRow.children[1].dispatchEvent(afterPress);
     check("…and allowed again after the press", !afterPress.defaultPrevented);
+
+    // ---- connect / disconnect (Update 6): the header and the Files view switch live with the 3 s poll
+    {
+      showTab("files");
+      await openDir("/sdcard");
+      const offlineCard = $("#list-offline");
+      const visible = (n) => !!n && getComputedStyle(n).display !== "none" && n.getBoundingClientRect().height > 0;
+      const reason = "No Thor found – is the cable plugged in and USB debugging on?";
+      H.device = { connected: false, message: reason };
+      // No manual pollDevice(): the regular poll from main.js must pick it up.
+      const switchedOff = await until(() => $("#device-text").textContent === "Not connected", POLL_INTERVAL_MS + 1500);
+      check("disconnect: pill switches to 'Not connected' on the regular poll", switchedOff && !S.connected, $("#device-text").textContent);
+      check("disconnect: pill has a dashed outline, a hollow dot and muted text",
+        getComputedStyle($("#device")).borderTopStyle === "dashed" && !$("#device").classList.contains("on") &&
+        getComputedStyle($("#device .dot")).backgroundColor === "rgba(0, 0, 0, 0)" &&
+        getComputedStyle($("#device")).color !== getComputedStyle(document.body).color,
+        `${getComputedStyle($("#device")).borderTopStyle} ${getComputedStyle($("#device .dot")).backgroundColor}`);
+      check("disconnect: the reason from adb is kept in the pill's tooltip", $("#device").title.includes(reason), $("#device").title);
+      check("disconnect: ThorBro asleep (thorbro-wait-off), tilted",
+        statusMascot() === "assets/mascot/thorbro-wait-off.svg" && getComputedStyle($("#device-mascot")).transform !== "none",
+        `${statusMascot()} ${getComputedStyle($("#device-mascot")).transform}`);
+      check("disconnect: not the old 'wait' mascot in the header", !header.querySelector("img[src$='thorbro-wait.svg'], img[src$='thorbro-wait.png']"));
+      check("files offline: 'No Thor connected' card instead of the list",
+        visible(offlineCard) && !visible($("#list-head")) && !visible($("#filelist")) && $("#list-wrap").classList.contains("offline"));
+      check("files offline: card text",
+        offlineCard.querySelector(".list-offline-title").textContent === "No Thor connected" &&
+        offlineCard.querySelector(".list-offline-text").textContent ===
+          "Plug the Thor in with USB and make sure USB debugging is on. ThorBro wakes up as soon as it sees it.",
+        offlineCard.textContent.trim());
+      check("files offline: toolbar, sidebar and pool stay", visible($(".toolbar")) && visible($("#side")) && visible($("#pool")));
+      for (const tab of ["start", "saves", "stream"]) showTab(tab);
+      check("disconnect: header stays asleep on every tab", statusMascot() === "assets/mascot/thorbro-wait-off.svg" && $("#device-text").textContent === "Not connected");
+      showTab("files");
+
+      H.device = { connected: true, message: "AYN Thor" };
+      const switchedOn = await until(() => $("#device-text").textContent === "Connected: AYN Thor", POLL_INTERVAL_MS + 1500);
+      check("reconnect: pill switches back on the regular poll", switchedOn && S.connected, $("#device-text").textContent);
+      check("reconnect: ThorBro awake again", statusMascot() === "assets/mascot/thorbro-done.svg" && getComputedStyle($("#device-mascot")).transform === "none", statusMascot());
+      check("reconnect: the list replaces the card and is filled again",
+        await until(() => FM.status === "ready" && S.shown.length > 0) && !visible(offlineCard) && visible($("#filelist")) && visible($("#list-head")) && !$("#list-wrap").classList.contains("offline"),
+        `${FM.status} ${S.shown.length}`);
+      H.device = { connected: true, message: "Thor (fake)" };
+    }
 
     check("no JS errors logged", !(H.logs || []).length, (H.logs || []).join(" | "));
   } catch (e) {

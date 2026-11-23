@@ -7,22 +7,36 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- One header for every page. The connection state (pill + ThorBro awake / asleep) is set by
+       js/device.js (renderDeviceStatus) on every device poll. -->
   <header class="topbar">
-    <div class="brand"><img class="brand-logo" src="assets/logo-256.png" alt="" width="56" height="56"><span class="brand-name">ThorBro</span></div>
+    <!-- Wordmark in the back, three ThorBros standing on top of the letters in front of it. -->
+    <div class="brand" role="img" aria-label="ThorBro">
+      <span class="brand-word" aria-hidden="true">ThorBro</span>
+      <span class="brand-bros" aria-hidden="true">
+        <img class="bro bro-sage" src="assets/mascot/thorbro-bro-sage.svg" alt="" width="82" height="82">
+        <img class="bro bro-orange" src="assets/mascot/thorbro-bro-orange.svg" alt="" width="90" height="90">
+        <img class="bro bro-coral" src="assets/mascot/thorbro-bro-coral.svg" alt="" width="82" height="82">
+      </span>
+    </div>
     <nav class="tabs" role="tablist" aria-label="Main">
-      <button class="tab" data-tab="start" role="tab">Start</button>
-      <button class="tab active" data-tab="files" role="tab">Files</button>
+      <button class="tab active" data-tab="start" role="tab">Start</button>
+      <button class="tab" data-tab="files" role="tab">Files</button>
       <button class="tab" data-tab="saves" role="tab">Saves</button>
       <button class="tab" data-tab="stream" role="tab">Stream</button>
     </nav>
-    <button type="button" class="device" id="device" title="Reconnect">
-      <span class="dot"></span><span id="device-text">Looking for Thor …</span>
-    </button>
+    <div class="status" id="status">
+      <button type="button" class="device" id="device" title="Reconnect">
+        <span class="dot"></span><span id="device-text">Looking for Thor …</span>
+      </button>
+      <!-- Awake (thorbro-done) when connected, asleep (thorbro-wait-off) when not. -->
+      <img class="status-mascot" id="device-mascot" src="assets/mascot/thorbro-wait-off.svg" alt="" width="124" height="124">
+    </div>
   </header>
 
   <!-- ============================ Start ============================ -->
   <!-- Filled by js/start.js from the libraries the file manager already loaded (S.libs). -->
-  <section class="page" id="page-start">
+  <section class="page active" id="page-start">
     <section class="hero" aria-label="Send games">
       <div class="hero-main">
         <img class="hero-logo" src="assets/logo-256.png" alt="" width="112" height="112">
@@ -53,7 +67,7 @@
   </section>
 
   <!-- ============================ Files ============================ -->
-  <section class="page active" id="page-files">
+  <section class="page" id="page-files">
     <!-- Sidebar (js/start.js): the same locations as the #place drop-down, which replaces it in narrow windows. -->
     <aside class="side" id="side" aria-label="Locations">
       <!-- Storages, pins and libraries scroll; the file pool below them always stays in view. -->
@@ -146,6 +160,11 @@
         <div class="list" id="filelist" tabindex="0" role="listbox" aria-multiselectable="true">
           <div class="list-sizer" id="list-sizer"><div class="band hidden" id="band"></div></div>
           <div class="list-msg hidden" id="list-msg"></div>
+        </div>
+        <!-- No Thor connected: shown instead of the list head and rows (files.js renderFiles). -->
+        <div class="list-offline hidden" id="list-offline" role="status">
+          <span class="list-offline-title">No Thor connected</span>
+          <span class="list-offline-text">Plug the Thor in with USB and make sure USB debugging is on. ThorBro wakes up as soon as it sees it.</span>
         </div>
         <!-- Shown while files from the PC are dragged over the window (js/transfer.js). -->
         <div class="drop-card-wrap hidden" id="drop-card" aria-hidden="true">

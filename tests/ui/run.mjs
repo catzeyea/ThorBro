@@ -43,6 +43,22 @@ try {
   if (r.type === "error" || r.result?.type === "exception") { console.log(JSON.stringify(r, null, 1)); process.exitCode = 2; }
   else {
     const results = JSON.parse(r.result.result.value);
+    // The header at other window sizes (default 980 x 760 down to the minimum 520 x 480, tauri.conf.json):
+    // it must not overflow sideways, stays at about 150 px or less, and the Files list keeps its room.
+    const sizes = [[1440, 900, 300], [1180, 700, 200], [980, 760, 250], [1000, 560, 150], [700, 560, 0], [520, 480, 0]];
+    await send("script.evaluate", { expression: `(async()=>{HARNESS.device={connected:true,message:"AYN Thor"};await pollDevice(true);showTab("files")})()`, target: { context }, awaitPromise: true });
+    for (const [width, height, minList] of sizes) {
+      await send("browsingContext.setViewport", { context, viewport: { width, height } });
+      await sleep(300);
+      const m = await send("script.evaluate", {
+        expression: `JSON.stringify((()=>{const h=$(".topbar");const t=$("#device-text");return{h:h.getBoundingClientRect().height,over:h.scrollWidth>h.clientWidth||document.documentElement.scrollWidth>innerWidth,cut:t.scrollWidth>t.clientWidth,list:$("#filelist").clientHeight,w:innerWidth}})())`,
+        target: { context }, awaitPromise: false,
+      });
+      const v = JSON.parse(m.result.result.value);
+      const info = `${v.w}x${height}: header ${Math.round(v.h)} px, list ${v.list} px${v.cut ? ", pill cut" : ""}${v.over ? ", overflow" : ""}`;
+      results.push({ name: `small windows: header fits at ${width} x ${height}`, ok: v.w === width && !v.over && v.h <= 152 && v.list >= minList && (width < 980 || !v.cut), info });
+    }
+    await send("browsingContext.setViewport", { context, viewport: null });
     let failed = 0;
     for (const t of results) { if (!t.ok) failed++; console.log(`${t.ok ? "PASS" : "FAIL"}  ${t.name}${t.info && !t.ok ? "  -> " + t.info : t.info ? "  (" + t.info + ")" : ""}`); }
     console.log(`\n${results.length - failed}/${results.length} passed`);

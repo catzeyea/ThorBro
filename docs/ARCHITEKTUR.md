@@ -61,7 +61,7 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `style.css` | Aussehen. |
 | `js/core.js` | Tauri-Zugriff (`T`, `invoke`), Helfer (`$`, `esc`, `el`, `human`), globaler Zustand `S`, `toast`, `call`. |
 | `js/dialogs.js` | Modale Dialoge: `modal`, `dialog`, `ask`, `busyModal`, `folderPicker`. |
-| `js/device.js` | Tabs und Geräteerkennung (`pollDevice`). |
+| `js/device.js` | Tabs, Geräteerkennung (`pollDevice`) und der Verbindungsstatus im Header (`renderDeviceStatus`: Status-Pille, ThorBro wach / schlafend). |
 | `js/files.js` | Dateimanager-Tab, Teil 1: Orte, Listing-Cache, virtualisierte Liste, Auswahl, Verlauf, Tastatur. |
 | `js/files-actions.js` | Dateimanager-Tab, Teil 2: Ausschneiden/Kopieren/Einfügen, Umbenennen in der Zeile, Verschieben, Löschen, Kontextmenüs, Ziehen von Zeilen (in Ordner oder in den File Pool). |
 | `js/transfer.js` | Senden an den Thor: Drag & Drop mit Drop-Karte, Ctrl+O / „Add files …“, Einsortier-Dialog, Kopier-Warteschlange, Fortschrittsleiste (zeigt die „transfer“-Events, auch „file X of Y“). |
@@ -73,7 +73,7 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `js/pcstream.js` | Stream-Tab, Unter-Tab „Stream PC games“ (Status-Chips, „Play on Thor“, „Send to Thor app“, Pairing) und die Help-Seite (Sunshine und Login, Adressen, Apps auf dem Thor, Bildschirmauswahl, Checkliste, Stream-Profil). |
 | `js/pins.js` | Angeheftete Thor-Ordner: Pin-Knopf in der Pfadleiste (Strg+D), Karte „pinned“ in der Ortsleiste, Zeile „pinned“ im Start-Tab, Zustand „not found“ (`pins`, `add_pin`, `remove_pin`, `pins_found`; gespeichert in `settings.json`). |
 | `js/start.js` | Start-Tab (Ablagefläche, Bibliotheks-Kacheln), die Ortsleiste des Dateimanagers, die Tastenkürzel-Liste. |
-| `js/main.js` | Start: erste Geräteabfrage und Timer. |
+| `js/main.js` | Start: öffnet Start (bei jedem Start, der letzte Tab wird nicht gemerkt), erste Geräteabfrage und Timer. |
 
 Die JS-Dateien sind klassische `<script>`-Dateien ohne `type="module"`. Sie teilen sich einen
 globalen Gültigkeitsbereich, so als wären sie hintereinander in eine Datei kopiert. Deshalb
@@ -175,13 +175,15 @@ System auf das Fenster gezogen werden (`transfer.js`).
    - Status `device` → verbunden. Der Modellname kommt aus `adb shell getprop ro.product.model`.
 5. **Antwort.** Das Ergebnis `Device { connected, message }` wird zu JSON
    `{ "connected": true, "message": "AYN Thor" }`.
-6. **Anzeige.** `pollDevice` färbt den Punkt oben rechts und setzt den Text. Hat sich
-   `connected` geändert, folgt:
+6. **Anzeige.** `pollDevice` ruft bei jeder Antwort `renderDeviceStatus()` auf: Die Pille im
+   Header zeigt „Connected: <Modell>“ oder „Not connected“ (der Grund aus Schritt 4 steht im
+   Tooltip), der ThorBro daneben ist wach (`thorbro-done.svg`) oder schläft (`thorbro-wait-off.svg`).
+   Hat sich `connected` geändert, folgt:
    - verbunden: `loadPlaces(true)` → `invoke("places")` → `commands::places` → `adb::storages()`
      (interner Speicher und SD-Karten) und `library::find_libraries()` (ein Shell-Script pro
      Speicher liest alle `ROMs/*/systeminfo.txt`). Die Libraries landen in `AppState.libs` und
      in `S.libs`. Danach öffnet der Dateimanager den zuletzt benutzten Ordner.
-   - getrennt: Die Dateiliste zeigt „No Thor connected“.
+   - getrennt: Statt der Dateiliste erscheint die Karte „No Thor connected“.
    - Im Saves-Tab werden zusätzlich die Spielkarten neu geprüft.
 
 ## Beispiel 2: Spiel per Drop einsortieren

@@ -17,6 +17,12 @@ opening from the sidebar and the Start tab, "not found" (folder gone or Thor not
 For the "Stream PC games" sub-tab and Help (fake Sunshine/Moonlight in `stub.js`): status chips, Help sections, login save/reject,
 pairing with and without `pairing_id`, game list, "Play on Thor" with the experimental display id, stream profile,
 "Send to Thor app" (sent / note / app not installed / too large).
+The header and the launch page (Update 6): every launch opens Start and no tab is stored, the shared header
+(wordmark, three ThorBros, pill and status ThorBro) on every tab, connected and not connected looks, the live switch
+on the regular 3 s poll when the fake Thor (`HARNESS.device` in `stub.js`) is unplugged and plugged in again, and the
+"No Thor connected" card that replaces the file list. After `tests.js`, `run.mjs` resizes the window from 1440 x 900
+down to the minimum 520 x 480 and checks that the header fits (no sideways overflow, about 150 px or less, the Files
+list keeps its room where it had room before).
 
 ```sh
 node tests/ui/run.mjs           # needs node >= 22 and firefox

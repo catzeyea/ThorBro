@@ -53,7 +53,7 @@
 
   /* Type: one family for everything */
   --font: "JetBrains Mono", ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace;
-  --fs-wordmark: 28px;
+  --fs-wordmark: 62px;                    /* header wordmark (Update 6) */
   --fs-hero: 46px;
   --fs-section: 30px;
   --fs-tile: 30px;
@@ -118,7 +118,12 @@
   --content-max: 1344px;
   --side-w: 270px;
   --control-h: 46px;
-  --logo-h: 56px;
+  /* Header (Update 6): wordmark with three ThorBros, status ThorBro next to the pill */
+  --bro-s: 82px;                          /* sage and coral ThorBro */
+  --bro-l: 90px;                          /* orange ThorBro in the middle */
+  --status-mascot: 124px;
+  --tab-pad-x: 20px;
+  --gap-header: 24px;
   --gap-files: 16px;
 
   color-scheme: dark;
@@ -127,7 +132,16 @@
 @media (max-width: 1100px) { :root { --pad-y: 22px; --pad-x: 28px; --side-w: 240px; } }
 @media (max-width: 700px)  { :root { --pad-y: 16px; --pad-x: 16px; --fs-hero: 34px; --fs-section: 24px; } }
 /* Short windows (the app opens at 980 x 760): less air, so the file list keeps its rows. */
-@media (max-height: 820px) { :root { --pad-y: 16px; --logo-h: 44px; --gap-files: 12px; } }
+@media (max-height: 820px) { :root { --pad-y: 16px; --gap-files: 12px; } }
+/* Header sizes. Full size (wordmark 62 px, ThorBros 82 / 90 / 82 px, status ThorBro 124 px) where it
+   fits in one row; smaller in the default 980 px wide window, and smaller still in short or
+   narrow windows, so the pages below keep their room. */
+@media (max-width: 1180px) {
+  :root { --fs-wordmark: 52px; --bro-s: 69px; --bro-l: 76px; --status-mascot: 96px; --tab-pad-x: 12px; --gap-header: 10px; }
+}
+@media (max-height: 620px), (max-width: 760px) {
+  :root { --fs-wordmark: 40px; --bro-s: 54px; --bro-l: 60px; --status-mascot: 76px; --tab-pad-x: 14px; --gap-header: 12px; }
+}
 
 /* ------------------------------------------------------------------ Base */
 * { box-sizing: border-box; }
@@ -214,33 +228,57 @@ select:focus, input:focus { outline: var(--line) solid var(--orange); outline-of
 /* ------------------------------------------------------------------ Header (all tabs) */
 .topbar {
   width: 100%; max-width: calc(var(--content-max) + 2 * var(--pad-x)); margin: 0 auto;
-  padding: var(--pad-y) var(--pad-x) calc(var(--pad-y) - 4px);
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 10px var(--pad-x) 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--gap-header);
 }
-.brand { display: flex; align-items: center; gap: 12px; }
-.brand-logo { width: var(--logo-h); height: var(--logo-h); display: block; }
-.brand-name { font-weight: 700; font-size: var(--fs-wordmark); letter-spacing: -0.01em; }
-.tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.brand { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; }
+/* The bros stand in front of the wordmark with their feet near the top edge of the letters
+   (the SVGs have about 11 % empty space under the feet, hence the overlap). */
+.brand-bros {
+  order: -1; position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: center;
+  margin-bottom: calc(var(--fs-wordmark) * -0.36);
+}
+.bro { display: block; opacity: .9; }
+.bro + .bro { margin-left: calc(var(--bro-s) * -0.26); }
+.bro-sage   { width: var(--bro-s); height: var(--bro-s); transform: rotate(-5deg); }
+.bro-orange { width: var(--bro-l); height: var(--bro-l); transform: rotate(3deg); }
+.bro-coral  { width: var(--bro-s); height: var(--bro-s); transform: rotate(-2deg); }
+.brand-word {
+  font-weight: 700; font-size: var(--fs-wordmark); line-height: 1; letter-spacing: -0.02em;
+  opacity: .72; white-space: nowrap;
+}
+.tabs { flex: none; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .tab {
-  padding: 9px 20px; border: var(--line) solid transparent; border-radius: var(--r-tab-plain);
+  padding: 9px var(--tab-pad-x); border: var(--line) solid transparent; border-radius: var(--r-tab-plain);
   background: transparent; font-size: 16px; font-weight: 500; color: var(--ink);
 }
 .tab:hover:not(:disabled) { background: var(--ink-tint); transform: none; }
 .tab.active, .tab.active:hover:not(:disabled) {
-  padding: 9px 22px; border-color: var(--ink); border-radius: var(--r-tab);
+  padding: 9px calc(var(--tab-pad-x) + 2px); border-color: var(--ink); border-radius: var(--r-tab);
   background: var(--orange); color: var(--on-color); font-weight: 600;
   box-shadow: var(--shadow-orange); transform: rotate(var(--tilt-tab));
 }
+.status { flex: 0 1 auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+/* Phone-narrow windows: wordmark and status in the first row, the nav centered in a second one. */
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; row-gap: 2px; padding-top: 6px; }
+  .tabs { order: 1; flex-basis: 100%; justify-content: center; }
+  .status { flex: 1 1 0; } /* stays next to the wordmark; the pill text shortens with "…" */
+}
 .device {
-  display: inline-flex; align-items: center; gap: 10px;
-  padding: 9px 18px; border: var(--line) solid var(--ink-soft); border-radius: var(--r-chip);
-  font-weight: 500; font-size: var(--fs-button);
-  max-width: 45%; overflow: hidden; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 9px 18px; border: var(--line) dashed var(--ink-divider); border-radius: var(--r-chip);
+  font-weight: 500; font-size: var(--fs-button); color: var(--mute);
+  overflow: hidden; white-space: nowrap;
 }
 .device:hover:not(:disabled) { background: var(--ink-tint); transform: none; }
-.device .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--orange); flex: none; }
-.device.on .dot { background: var(--sage); }
+/* Not connected: hollow grey dot. Connected: solid outline, green dot, normal text. */
+.device .dot { width: 10px; height: 10px; border-radius: 50%; border: var(--line) solid var(--mute); background: transparent; flex: none; }
+.device.on { border-style: solid; border-color: var(--ink-soft); color: var(--ink); }
+.device.on .dot { border-color: var(--sage); background: var(--sage); }
 #device-text { overflow: hidden; text-overflow: ellipsis; }
+.status-mascot { width: var(--status-mascot); height: var(--status-mascot); flex: none; display: block; transform: rotate(14deg); }
+.status.on .status-mascot { transform: none; }
 
 /* ------------------------------------------------------------------ Pages */
 .page {
@@ -468,6 +506,15 @@ select:focus, input:focus { outline: var(--line) solid var(--orange); outline-of
 .list { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; outline: none; contain: strict; }
 .list-sizer { position: relative; width: 100%; }
 .list-msg { position: absolute; inset: 0 0 auto 0; padding: 40px; text-align: center; color: var(--mute); pointer-events: none; }
+/* No Thor connected: the list panel becomes an empty card with one message (FilesClean5). */
+.list-wrap.offline .list-head, .list-wrap.offline .list { display: none; }
+.list-offline {
+  flex: 1; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  padding: 32px 28px; text-align: center;
+}
+.list-offline-title { font-weight: 700; font-size: 22px; }
+.list-offline-text { max-width: 460px; font-size: var(--fs-body); color: var(--body); }
 .list-wrap.loading::after {
   content: ""; position: absolute; left: 0; top: 0; width: 30%; height: 3px;
   background: var(--sage);

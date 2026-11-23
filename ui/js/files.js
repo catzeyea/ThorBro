@@ -535,6 +535,10 @@ function renderFiles(placeholder) {
   }
   $("#hide-empty-wrap").classList.toggle("hidden", !lib);
   $("#list-sizer").style.height = `${S.shown.length * ROW_HEIGHT_PX + LIST_BOTTOM_PAD_PX}px`;
+  // No Thor: the "No Thor connected" card replaces the list head and rows.
+  const offline = FM.status === "offline";
+  $("#list-wrap").classList.toggle("offline", offline);
+  $("#list-offline").classList.toggle("hidden", !offline);
   const message = (!S.shown.length && placeholder) || listMessage(hideEmpty);
   const messageEl = $("#list-msg");
   messageEl.textContent = message;

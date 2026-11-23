@@ -21,6 +21,8 @@
     .map(([p, e]) => ({ name: p.slice(dir.length + 1), dir: e.dir, size: e.size, mtime: e.mtime }));
 
   const H = (window.HARNESS = { calls: [], latency: {}, fail: {}, defaultLatency: 30, fs, pins: [], maxPins: 12, bigSize: {} });
+  // Answer of the "device" command (adb::Device). Tests flip it to fake plugging the Thor in or out.
+  H.device = { connected: true, message: "Thor (fake)" };
   // Fake scrcpy: detected displays, running display ids, failures; failStart[id] = error text.
   const opts = () => ({ max_size: 0, bitrate_mbps: 16, always_on_top: false });
   H.stream = {
@@ -66,7 +68,7 @@
     return typeof l === "function" ? l(args) : (l ?? H.defaultLatency);
   };
   const handlers = {
-    device: () => ({ connected: true, message: "Thor (fake)" }),
+    device: () => ({ ...H.device }),
     places: () => ({
       places: [{ label: "Internal storage", path: "/sdcard", games: false }, { label: "SD card (1A2B-3C4D)", path: "/storage/1A2B-3C4D", games: false }],
       libs: [], start: "/sdcard",

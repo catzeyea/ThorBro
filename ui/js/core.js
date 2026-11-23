@@ -66,7 +66,7 @@ function el(html) {
 
 /** UI state shared by all parts of the app. */
 const S = {
-  tab: "files",
+  tab: "start",     // every launch opens Start (not remembered, see main.js)
   connected: false,
   deviceMsg: "",
   places: [],       // location drop-down entries (from commands::places)
