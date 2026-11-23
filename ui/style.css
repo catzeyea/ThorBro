@@ -29,6 +29,8 @@
   --sage: #A5B98C;                        /* main color: selection, ok, drop zones */
   --sage-shadow: #4a5c38;
   --sage-soft: rgba(165, 185, 140, 0.16);
+  --sage-light: #C9D8B4;                  /* highlights in the gauges */
+  --sage-line: rgba(165, 185, 140, 0.7);  /* dashed outline of the drop info line */
   --orange: #F0A94B;                      /* the one main action, active tab, game counts */
   --orange-shadow: #7a4a0f;
   --orange-soft: rgba(240, 169, 75, 0.14);
@@ -123,6 +125,10 @@
   --bro-l: 90px;                          /* orange ThorBro in the middle */
   --status-mascot: 124px;
   --tab-pad-x: 20px;
+  /* Start page status (Update 7) */
+  --mood-img: 210px;
+  --fs-mood: 48px;
+  --gauge-pad: 24px;
   --gap-header: 24px;
   --gap-files: 16px;
 
@@ -137,10 +143,12 @@
    fits in one row; smaller in the default 980 px wide window, and smaller still in short or
    narrow windows, so the pages below keep their room. */
 @media (max-width: 1180px) {
-  :root { --fs-wordmark: 52px; --bro-s: 69px; --bro-l: 76px; --status-mascot: 96px; --tab-pad-x: 12px; --gap-header: 10px; }
+  :root { --fs-wordmark: 52px; --bro-s: 69px; --bro-l: 76px; --status-mascot: 96px; --tab-pad-x: 12px; --gap-header: 10px;
+          --mood-img: 160px; --fs-mood: 40px; --gauge-pad: 12px; }
 }
 @media (max-height: 620px), (max-width: 760px) {
-  :root { --fs-wordmark: 40px; --bro-s: 54px; --bro-l: 60px; --status-mascot: 76px; --tab-pad-x: 14px; --gap-header: 12px; }
+  :root { --fs-wordmark: 40px; --bro-s: 54px; --bro-l: 60px; --status-mascot: 76px; --tab-pad-x: 14px; --gap-header: 12px;
+          --mood-img: 110px; --fs-mood: 30px; --gauge-pad: 12px; }
 }
 
 /* ------------------------------------------------------------------ Base */
@@ -277,8 +285,8 @@ select:focus, input:focus { outline: var(--line) solid var(--orange); outline-of
 .device.on { border-style: solid; border-color: var(--ink-soft); color: var(--ink); }
 .device.on .dot { border-color: var(--sage); background: var(--sage); }
 #device-text { overflow: hidden; text-overflow: ellipsis; }
-.status-mascot { width: var(--status-mascot); height: var(--status-mascot); flex: none; display: block; transform: rotate(14deg); }
-.status.on .status-mascot { transform: none; }
+.status-mascot { width: var(--status-mascot); height: var(--status-mascot); flex: none; display: block; }
+.status.asleep .status-mascot { transform: rotate(14deg); } /* only the sleeping ThorBro is tilted */
 
 /* ------------------------------------------------------------------ Pages */
 .page {
@@ -291,26 +299,60 @@ select:focus, input:focus { outline: var(--line) solid var(--orange); outline-of
 
 /* ------------------------------------------------------------------ Start */
 #page-start { gap: 36px; padding-bottom: calc(var(--pad-y) + 24px); }
-.hero {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 28px;
-  padding: 34px 44px 34px 36px; border: var(--line) dashed var(--sage); border-radius: var(--r-hero);
-  background: transparent;
+/* Thor status (js/status.js, DESIGN-UPDATE-7 Main / StartNoSD): ThorBro's mood, then ONE row of
+   drawn gauges without cards. Columns are separated by a dashed line; the row scrolls sideways
+   inside itself when the window is too narrow. */
+.thor-status { display: flex; flex-direction: column; gap: 22px; }
+.mood { display: flex; align-items: center; gap: 24px; }
+.mood-img { width: var(--mood-img); height: var(--mood-img); flex: none; display: block; }
+.mood-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mood-head { font-weight: 700; font-size: var(--fs-mood); line-height: 1.05; letter-spacing: -0.01em; }
+.mood-line { font-size: var(--fs-lead); line-height: 1.5; color: var(--body); }
+.gauges { display: flex; flex-wrap: nowrap; justify-content: space-between; align-items: flex-start; overflow-x: auto; }
+.gauge { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 2px var(--gauge-pad); }
+.gauge + .gauge { border-left: var(--line) dashed var(--ink-divider); }
+.gauge-label { height: 28px; display: flex; align-items: center; font-size: var(--fs-small); color: var(--mute); }
+.gauge-draw { height: 92px; display: flex; align-items: center; }
+.gauge-value { font-size: 30px; line-height: 1; }
+.gauge-value b { font-weight: 700; }
+.gauge-unit { font-weight: 500; font-size: 14px; color: var(--mute); }
+.gauge-sub { font-size: 12px; color: var(--mute); min-height: 18px; }
+/* Storage: 10 blocks per row; used blocks are outlines, free ones are filled. */
+.blocks { display: grid; grid-template-columns: repeat(10, 12px); gap: 3px; }
+.blk { width: 12px; height: 12px; border-radius: 3px; border: var(--line) solid var(--ink-divider); }
+.blk.free { background: var(--sage); border-color: var(--ink); }
+/* SVG parts of the gauges */
+.gauge svg { display: block; }
+/* The default 980 px window: slightly smaller drawings so all five columns fit without scrolling. */
+@media (max-width: 1180px) { .gauge-draw svg { max-width: 150px; height: auto; } }
+.g-outline { fill: none; stroke: var(--ink); stroke-width: 4; }
+.g-ink { fill: var(--ink); }
+.g-fill, .g-merc, .chip.on { fill: var(--sage); }
+.g-shine { fill: var(--sage-light); }
+.g-empty-dash { fill: none; stroke: var(--ink-faint); stroke-width: 2; stroke-dasharray: 3 4; }
+.g-bolt { fill: var(--orange); stroke: var(--bg); stroke-width: 4; stroke-linejoin: round; }
+.g-spark, .g-pin { fill: none; stroke: var(--orange); stroke-width: 3; stroke-linecap: round; }
+.g-base { stroke: var(--ink-divider); stroke-width: 2; }
+.g-line { fill: none; stroke: var(--sage); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.g-line.hot { stroke: var(--orange); }
+.g-stick, .g-tube { fill: var(--panel); stroke: var(--ink); stroke-width: 3.5; stroke-linejoin: round; }
+.chip { fill: var(--panel); stroke: var(--ink-divider); stroke-width: 2.4; }
+.chip.on { stroke: var(--ink); }
+.g-bulb { fill: var(--sage); stroke: var(--ink); stroke-width: 3.5; }
+.g-bulb.hot, .g-merc.hot { fill: var(--orange); }
+.g-tick, .g-tick-s { stroke-width: 2.2; stroke-linecap: round; }
+.g-tick { stroke: var(--ink-soft); }
+.g-tick-s { stroke: var(--ink-divider); }
+
+/* "Drop files anywhere in ThorBro": information only, no click action. */
+.drop-info {
+  display: flex; align-items: center; gap: 16px; padding: 14px 24px;
+  border: var(--line) dashed var(--sage-line); border-radius: var(--r-1); color: var(--sage);
 }
-.hero-main { display: flex; align-items: center; gap: 30px; flex: 1 1 520px; min-width: 0; }
-.hero-logo { width: 112px; height: 112px; flex: none; transform: rotate(var(--tilt-logo)); }
-.hero-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.hero h1 { margin: 0; font-size: var(--fs-hero); letter-spacing: -0.02em; line-height: 1.05; }
-.hero p { max-width: 540px; font-size: var(--fs-lead); line-height: 1.5; color: var(--body); }
-.hero-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 0; }
-.hero-folder { font-weight: 600; font-size: 18px; text-align: right; overflow-wrap: anywhere; }
-.hero-side button { margin-top: 4px; padding: 12px 26px; }
-@media (max-width: 700px) {
-  .hero { padding: 24px 20px; }
-  .hero-main { flex-basis: 100%; gap: 18px; }
-  .hero-logo { width: 72px; height: 72px; }
-  .hero-side { align-items: flex-start; }
-  .hero-folder { text-align: left; }
-}
+.drop-info svg { flex: none; }
+.drop-info-text { display: flex; flex-direction: column; gap: 3px; color: var(--ink); }
+.drop-info-title { font-weight: 700; font-size: 18px; }
+.drop-info-body { font-size: 14px; line-height: 1.5; color: var(--body); }
 
 .libraries { display: flex; flex-direction: column; gap: 20px; }
 .section-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 16px; }

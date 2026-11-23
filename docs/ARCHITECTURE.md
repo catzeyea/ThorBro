@@ -42,6 +42,7 @@ For screen mirroring it starts `scrcpy`.
 | `esde_import.rs` | "Import ES-DE info": preview and write ES-DE `systeminfo.txt` files (one place for the format), optional case-only renames to ES-DE folder names. |
 | `settings.rs` | `<config dir>/thorBro/settings.json` (`%APPDATA%`, `~/Library/Application Support`, `~/.config`): custom game library folders, systems picked per folder, pinned Thor folders (storage + path, in pin order, at most 12) and the last used stream options per display. |
 | `unpack.rs` | Extracting archives (zip/7z/tar in Rust, otherwise external 7z/bsdtar/unrar), making file names FAT-safe. |
+| `status.rs` | Thor status for the Start page in ONE `adb shell` call: battery (`dumpsys battery`), internal storage and SD card (`df -k`), CPU counters (`/proc/stat`), RAM (`/proc/meminfo`), hottest CPU thermal zone. Unreadable values stay `None`. |
 | `stream.rs` | Detecting the displays (`scrcpy --list-displays`), starting and stopping one scrcpy window per display, recording why a stream failed. |
 | `pcstream/` | "Stream PC games to your Thor" (sub-tab of Stream): `sunshine.rs` (service state, `GET /serverinfo`), `network.rs` (LAN addresses, `tailscale` CLI), `admin.rs` (Sunshine admin API over HTTPS from Rust, login in the OS keychain, pairing, app list), `thor.rs` (Moonlight/Tailscale app check, "Play on Thor" and "Send to Thor app" via `am start`), `profile.rs` (stream profile JSON, see `STREAM-PROFILE.md`). Background: `PC-STREAMING-RESEARCH.md`. |
 | `util.rs` | Small helpers: formatting sizes/times, MD5, copying and mirroring folders (replacement for rsync), `which`, running a process with a timeout. |
@@ -64,7 +65,7 @@ For screen mirroring it starts `scrcpy`.
 | `style.css` | Look and feel. |
 | `js/core.js` | Tauri access (`T`, `invoke`), helpers (`$`, `esc`, `el`, `human`), global state `S`, `toast`, `call`. |
 | `js/dialogs.js` | Modal dialogs: `modal`, `dialog`, `ask`, `busyModal`, `folderPicker`. |
-| `js/device.js` | Tabs, device detection (`pollDevice`) and the connection state in the header (`renderDeviceStatus`: status pill, ThorBro awake / asleep). |
+| `js/device.js` | Tabs, device detection (`pollDevice`) and the connection state in the header (`renderDeviceStatus`: status pill, ThorBro in the current mood). `pollDevice` never runs twice at the same time. |
 | `js/files.js` | File manager tab, part 1: locations, listing cache, virtualized list, selection, history, keyboard. |
 | `js/files-actions.js` | File manager tab, part 2: cut/copy/paste, rename in place, move, delete, context menus, dragging rows (into folders or into the file pool). |
 | `js/transfer.js` | Sending to the Thor: drag & drop with the drop card, Ctrl+O / "Add files …", sort dialog, copy queue, transfer strip (shows the "transfer" events, incl. "file X of Y"). |
@@ -75,8 +76,9 @@ For screen mirroring it starts `scrcpy`.
 | `js/stream.js` | Stream tab, sub-tab "Mirror Thor screens": three tiles (both / top / bottom, fixed ids 0 and 4), Stop, failures; the scrcpy display detection for the screen picker. |
 | `js/pcstream.js` | Stream tab, sub-tab "Stream PC games" (status chips, "Play on Thor", "Send to Thor app", pairing) and the Help page (Sunshine and login, addresses, Thor apps, screen picker, checklist, stream profile). |
 | `js/pins.js` | Pinned Thor folders: pin button in the path bar (Ctrl+D), "pinned" card in the sidebar, "pinned" row on the Start tab, "not found" state (`pins`, `add_pin`, `remove_pin`, `pins_found`). |
-| `js/start.js` | Start tab (drop zone, library tiles), the file manager's location sidebar, its keyboard shortcuts panel. |
-| `js/main.js` | Startup: opens Start (every launch, the last tab is not remembered), first device poll and timers. |
+| `js/status.js` | Thor status on the Start tab (drawn gauges) and ThorBro's mood (priority table and thresholds in one constants block), shown on the Start tab and in the header. Reads `thor_status` only while Start is open and a Thor is connected; a tick is skipped while the last reading runs. |
+| `js/start.js` | Start tab library tiles, the file manager's location sidebar, its keyboard shortcuts panel. |
+| `js/main.js` | Startup: opens Start (every launch, the last tab is not remembered), first device poll and timers (device, stream, Start page status). |
 
 The JS files are classic `<script>` files without `type="module"`. They share one global scope,
 as if they had been pasted into one file one after another. That means: code that runs

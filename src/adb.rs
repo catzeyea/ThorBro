@@ -264,7 +264,7 @@ pub fn storages() -> Vec<(String, String)> {
 
 /// True for names Android gives to removable volumes: FAT/exFAT serials like `1A2B-3C4D`, or
 /// UUIDs like `0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0` (ext4 / NTFS sticks).
-fn is_volume_id(name: &str) -> bool {
+pub(crate) fn is_volume_id(name: &str) -> bool {
     static VOLUME_ID_RE: OnceLock<regex::Regex> = OnceLock::new();
     let regex = VOLUME_ID_RE.get_or_init(|| {
         regex::Regex::new(r"^(?:[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}|[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})$").unwrap()

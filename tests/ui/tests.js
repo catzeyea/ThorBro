@@ -48,8 +48,8 @@
       $("#device-text").textContent === "Connected: Thor (fake)" && $("#device").classList.contains("on") &&
       getComputedStyle($("#device")).borderTopStyle === "solid" && getComputedStyle($("#device .dot")).backgroundColor !== "rgba(0, 0, 0, 0)",
       `${$("#device-text").textContent} ${getComputedStyle($("#device")).borderTopStyle}`);
-    check("header connected: ThorBro awake (thorbro-done), not tilted",
-      statusMascot() === "assets/mascot/thorbro-done.svg" && getComputedStyle($("#device-mascot")).transform === "none",
+    check("header connected: ThorBro awake in the 'fit' mood (thorbro-base), not tilted",
+      statusMascot() === "assets/mascot/thorbro-base.svg" && getComputedStyle($("#device-mascot")).transform === "none",
       `${statusMascot()} ${getComputedStyle($("#device-mascot")).transform}`);
     {
       const seen = [];
@@ -1084,11 +1084,136 @@
       H.device = { connected: true, message: "AYN Thor" };
       const switchedOn = await until(() => $("#device-text").textContent === "Connected: AYN Thor", POLL_INTERVAL_MS + 1500);
       check("reconnect: pill switches back on the regular poll", switchedOn && S.connected, $("#device-text").textContent);
-      check("reconnect: ThorBro awake again", statusMascot() === "assets/mascot/thorbro-done.svg" && getComputedStyle($("#device-mascot")).transform === "none", statusMascot());
+      check("reconnect: ThorBro awake again (fit → thorbro-base)", statusMascot() === "assets/mascot/thorbro-base.svg" && getComputedStyle($("#device-mascot")).transform === "none", statusMascot());
       check("reconnect: the list replaces the card and is filled again",
         await until(() => FM.status === "ready" && S.shown.length > 0) && !visible(offlineCard) && visible($("#filelist")) && visible($("#list-head")) && !$("#list-wrap").classList.contains("offline"),
         `${FM.status} ${S.shown.length}`);
       H.device = { connected: true, message: "Thor (fake)" };
+    }
+
+    // ---- Start page status and ThorBro's mood (Update 7)
+    {
+      const fake = (o = {}) => ({ battery: null, internal: null, sd: null, cpuPct: null, ram: null, tempC: null, ...o });
+      const bat = (percent, charging = false) => ({ percent, charging });
+      const space = (usedPct, total = 500e9) => ({ total, free: total * (100 - usedPct) / 100, usedPct });
+      const m = (v, connected = true) => moodFor(connected, v).key;
+      // Priority table: asleep → busy → tired → stuffed → fit.
+      check("mood: no Thor → asleep, whatever the values", m(fake({ cpuPct: 99, battery: bat(5) }), false) === "asleep");
+      check("mood: CPU ≥ 80 % → working hard, before tired and stuffed",
+        m(fake({ cpuPct: 80, battery: bat(5), internal: space(95) })) === "busy" && m(fake({ cpuPct: 79 })) === "fit");
+      check("mood: CPU temperature ≥ 70 °C → working hard, 55 °C is fine", m(fake({ tempC: 70 })) === "busy" && m(fake({ tempC: 69.9 })) === "fit" && m(fake({ tempC: 55 })) === "fit");
+      check("mood: battery ≤ 20 % and not charging → tired, before stuffed",
+        m(fake({ battery: bat(20), internal: space(95) })) === "tired" && m(fake({ battery: bat(21) })) === "fit");
+      check("mood: low battery while charging (status 2) → not tired", m(fake({ battery: bat(10, true) })) === "fit");
+      check("mood: internal storage ≥ 90 % full → stuffed", m(fake({ internal: space(90) })) === "stuffed" && m(fake({ internal: space(89) })) === "fit");
+      check("mood: unreadable values don't count (no CPU, no temperature, no battery → fit)", m(fake()) === "fit" && moodFor(true, fake()).line === "All good here.");
+      check("mood: the sentence says why",
+        moodFor(true, fake({ battery: bat(14) })).line === "Battery is at 14 %. Plug me in soon." &&
+        moodFor(true, fake({ cpuPct: 91 })).line.includes("91 %") && moodFor(true, fake({ tempC: 72.4 })).line.includes("72 °C") &&
+        moodFor(true, fake({ internal: space(93) })).line.includes("93 % full"),
+        moodFor(true, fake({ battery: bat(14) })).line);
+      check("mood: headlines and mascots from the spec",
+        ["asleep", "busy", "tired", "stuffed", "fit"].map((k) => `${MOODS[k].head}|${MOODS[k].img.split("/").pop()}`).join() ===
+        "Zzz…|thorbro-wait-off.svg,Working hard!|thorbro-busy.svg,I'm tired…|thorbro-tired.svg,I'm stuffed!|thorbro-stuffed.svg,I feel great!|thorbro-base.svg");
+      check("charging = status 2 only (not 'plugged in', not full)",
+        isCharging({ percent: 50, status: 2 }) && !isCharging({ percent: 50, status: 3 }) && !isCharging({ percent: 100, status: 5 }) && !isCharging(null));
+      // Columns (StartNoSD: the RAM column takes the SD card's place).
+      const all = fake({ battery: bat(80), internal: space(40), sd: space(80, 128e9), cpuPct: 23, ram: { total: 16e9, used: 5e9, pct: 31 }, tempC: 35 });
+      check("columns with SD card: battery, internal, SD, CPU, temperature", statusColumnKeys(all).join() === "battery,internal,sd,cpu,temp", statusColumnKeys(all).join());
+      check("columns without SD card: battery, internal, CPU, RAM, temperature", statusColumnKeys({ ...all, sd: null }).join() === "battery,internal,cpu,ram,temp");
+      check("columns: unreadable values have no column (no placeholders)",
+        statusColumnKeys({ ...all, sd: null, ram: null, cpuPct: null, battery: null }).join() === "internal,temp" && statusColumnKeys(fake()).join() === "");
+
+      // Rendered from fake readings (stub: H.thorStatus).
+      const labels = () => [...document.querySelectorAll("#gauges .gauge-label")].map((n) => n.textContent).join();
+      const col = (key) => $(`#gauges .gauge[data-key="${key}"]`);
+      const colText = (key) => col(key) ? `${col(key).querySelector(".gauge-value").textContent}|${col(key).querySelector(".gauge-sub").textContent}` : "";
+      const fresh = async () => { showTab("start"); statusConnectionChanged(); await until(() => !STATUS.busy && STATUS.data); };
+      const saved = JSON.parse(JSON.stringify(H.thorStatus));
+      H.thorStatus.sd = null;
+      await fresh();
+      check("no SD card, first reading: no CPU column yet (needs two readings, no 0 %)",
+        labels() === "battery,internal storage,ram,temperature" && STATUS.cpuPct === null, labels());
+      check("no SD card: CPU column appears with the second reading",
+        await until(() => labels() === "battery,internal storage,cpu,ram,temperature", CPU_SECOND_SAMPLE_MS + 1500) && colText("cpu") === "23 %|nothing heavy running", `${labels()} ${colText("cpu")}`);
+      check("no SD card: RAM column with % and 'X of Y GB used'", colText("ram") === "33 %|5.2 of 16 GB used", colText("ram"));
+      H.thorStatus = JSON.parse(JSON.stringify(saved));
+      await fresh();
+      await until(() => STATUS.cpuPct !== null, CPU_SECOND_SAMPLE_MS + 1500);
+      check("with SD card: battery, internal storage, SD card, CPU, temperature", labels() === "battery,internal storage,SD card,cpu,temperature", labels());
+      check("with SD card: RAM shows under CPU, storage as GB free",
+        colText("cpu") === "23 %|RAM 33 %" && colText("internal") === "295 GB free|each block is about 10 GB" && colText("sd") === "25 GB free|each block is about 2.6 GB",
+        `${colText("cpu")} ${colText("internal")} ${colText("sd")}`);
+      check("storage blocks: 50, the free share filled", col("internal").querySelectorAll(".blk").length === 50 && col("internal").querySelectorAll(".blk.free").length === 30,
+        col("internal").querySelectorAll(".blk.free").length);
+      check("temperature: hottest CPU zone, rounded", colText("temp") === "35 °C|cool and calm", colText("temp"));
+      check("battery: no bolt while not charging (status 3)", colText("battery") === "80 %|" && !col("battery").querySelector(".g-bolt"), colText("battery"));
+      H.thorStatus.battery = { percent: 64, status: 2 };
+      const before = col("battery");
+      await new Promise((r) => { statusTick(); setTimeout(r, 0); }); await until(() => !STATUS.busy);
+      check("battery: bolt and '· charging' with status 2", colText("battery") === "64 % · charging|" && !!col("battery").querySelector(".g-bolt"), colText("battery"));
+      check("gauges update in place (same column element)", col("battery") === before);
+      check("fit mood on Start: headline, sentence, mascot", $("#mood-head").textContent === "I feel great!" &&
+        $("#mood-line").textContent === "Charging up, plenty of room. Nothing heavy running." && $("#mood-img").getAttribute("src") === "assets/mascot/thorbro-base.svg",
+        $("#mood-line").textContent);
+      // Same mood in the header, on every page.
+      H.thorStatus.battery = { percent: 12, status: 3 };
+      statusTick(); await until(() => $("#mood-head").textContent === "I'm tired…");
+      check("tired: Start page and header show the same mood", $("#mood-img").getAttribute("src") === "assets/mascot/thorbro-tired.svg" &&
+        statusMascot() === "assets/mascot/thorbro-tired.svg" && getComputedStyle($("#device-mascot")).transform === "none", statusMascot());
+      showTab("files");
+      check("tired: header keeps the mood on other pages", statusMascot() === "assets/mascot/thorbro-tired.svg");
+      // No readings outside Start.
+      const n0 = callsOf("thor_status").length;
+      await sleep(STATUS_POLL_MS + 600);
+      statusTick();
+      check("no status readings while another page is open", callsOf("thor_status").length === n0, callsOf("thor_status").length - n0);
+      showTab("start");
+      check("opening Start reads right away", callsOf("thor_status").length === n0 + 1);
+      await until(() => !STATUS.busy);
+      // Skip a tick while the previous reading still runs.
+      H.latency.thor_status = 400;
+      const n1 = callsOf("thor_status").length;
+      statusTick(); statusTick(); statusTick();
+      await sleep(30);
+      check("status poll: a tick is skipped while the last reading runs", callsOf("thor_status").length === n1 + 1, callsOf("thor_status").length - n1);
+      await until(() => !STATUS.busy, 2000);
+      H.latency.thor_status = undefined;
+      // pollDevice: the same guard.
+      H.latency.device = 400;
+      const d0 = callsOf("device").length;
+      const p1 = pollDevice(); const p2 = pollDevice(); const p3 = pollDevice(true);
+      await sleep(30);
+      check("device poll: no second poll while one runs", callsOf("device").length === d0 + 1 && p1 === p2, callsOf("device").length - d0);
+      await p3;
+      check("device poll: a forced poll runs right after the running one", callsOf("device").length === d0 + 2, callsOf("device").length - d0);
+      H.latency.device = undefined;
+      // Unreadable status: nothing shown, nothing counts.
+      H.fail.thor_status = "adb: device offline";
+      statusTick(); await until(() => !STATUS.busy && !STATUS.data);
+      check("status can't be read: no columns, fit mood without claims", $("#gauges").classList.contains("hidden") && labels() === "" && $("#mood-line").textContent === "All good here.", labels());
+      delete H.fail.thor_status;
+      check("status error is logged once", await until(() => (H.logs || []).some((l) => l.startsWith("thor_status:"))));
+      H.logs = (H.logs || []).filter((l) => !l.startsWith("thor_status:")); // logged on purpose
+      // Without a Thor: asleep, no columns, no readings.
+      H.device = { connected: false, message: "No Thor found" };
+      await pollDevice();
+      const n2 = callsOf("thor_status").length;
+      statusTick();
+      check("no Thor: asleep on Start, no columns, no readings",
+        $("#mood-head").textContent === "Zzz…" && $("#mood-img").getAttribute("src") === "assets/mascot/thorbro-wait-off.svg" &&
+        $("#gauges").classList.contains("hidden") && callsOf("thor_status").length === n2);
+      H.device = { connected: true, message: "Thor (fake)" };
+      H.thorStatus = JSON.parse(JSON.stringify(saved));
+      await pollDevice();
+      // The drop line is information only.
+      const info = $(".drop-info");
+      check("drop info line: text, and not a button (no link, no click handler, not focusable)",
+        info.querySelector(".drop-info-title").textContent === "Drop files anywhere in ThorBro" &&
+        !info.querySelector("button, a, [tabindex]") && info.tagName !== "BUTTON" && !info.onclick && info.tabIndex < 0,
+        info.textContent.trim());
+      check("Start page: old 'Drop games here' block is gone", !document.querySelector("#page-start .hero, #start-choose"));
+      showTab("files");
     }
 
     check("no JS errors logged", !(H.logs || []).length, (H.logs || []).join(" | "));

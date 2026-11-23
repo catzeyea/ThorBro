@@ -11,3 +11,6 @@ pollDevice(true);
 setInterval(() => pollDevice(false), POLL_INTERVAL_MS);
 setInterval(() => { if (S.tab === "stream") streamStatus(); }, POLL_INTERVAL_MS);
 setInterval(() => { if (S.tab === "stream" && PCS.sub === "pc") pcPoll(); }, POLL_INTERVAL_MS);
+// Thor status on the Start page (status.js): statusTick itself checks that Start is open, the
+// window is visible and a Thor is connected, and skips a tick while the last reading still runs.
+setInterval(statusTick, STATUS_POLL_MS);

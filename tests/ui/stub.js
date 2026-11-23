@@ -23,6 +23,17 @@
   const H = (window.HARNESS = { calls: [], latency: {}, fail: {}, defaultLatency: 30, fs, pins: [], maxPins: 12, bigSize: {} });
   // Answer of the "device" command (adb::Device). Tests flip it to fake plugging the Thor in or out.
   H.device = { connected: true, message: "Thor (fake)" };
+  // Answer of "thor_status" (status::ThorStatus). Fake values with an SD card; tests replace it.
+  // cpu.busy / cpu.total grow on every call (H.cpuStep per call), so the load is H.cpuStep.busy %.
+  H.thorStatus = {
+    battery: { percent: 80, status: 3 },
+    internal: { total: 499e9, free: 295e9 },
+    sd: { total: 128e9, free: 25e9 },
+    cpu: { busy: 300000, total: 10700000 },
+    ram: { total: 16e9, available: 10.8e9 },
+    cpu_temp_c: 34.8,
+  };
+  H.cpuStep = { busy: 23, total: 100 };
   // Fake scrcpy: detected displays, running display ids, failures; failStart[id] = error text.
   const opts = () => ({ max_size: 0, bitrate_mbps: 16, always_on_top: false });
   H.stream = {
@@ -69,6 +80,11 @@
   };
   const handlers = {
     device: () => ({ ...H.device }),
+    thor_status: () => {
+      const st = JSON.parse(JSON.stringify(H.thorStatus));
+      if (H.thorStatus.cpu) { H.thorStatus.cpu.busy += H.cpuStep.busy; H.thorStatus.cpu.total += H.cpuStep.total; }
+      return st;
+    },
     places: () => ({
       places: [{ label: "Internal storage", path: "/sdcard", games: false }, { label: "SD card (1A2B-3C4D)", path: "/storage/1A2B-3C4D", games: false }],
       libs: [], start: "/sdcard",
