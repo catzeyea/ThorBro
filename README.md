@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icons/128x128.png" width="96" alt="ThorBro icon">
+  <img src="docs/logo-256.png" width="128" alt="ThorBro logo">
 </p>
 
 <h1 align="center">ThorBro</h1>
