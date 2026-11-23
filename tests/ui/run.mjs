@@ -52,7 +52,15 @@ try {
       await send("script.evaluate", { expression: `(async()=>{go("/sdcard/big");await new Promise(r=>setTimeout(r,300));selectOnly("file3.bin");toggleSelect("file5.bin");FM.clip={mode:"cut",items:[],paths:new Set(["/sdcard/big/file7.bin"])};renderRows();$("#filelist").focus();})()`, target: { context }, awaitPromise: true });
       let shot = await send("browsingContext.captureScreenshot", { context });
       writeFileSync(join(here, "shot-list.png"), Buffer.from(shot.result.data, "base64"));
-      await send("script.evaluate", { expression: `(()=>{const r=[...document.querySelectorAll("#filelist .row")].find(r=>r._entry.name==="file5.bin");const b=r.getBoundingClientRect();r.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true,button:2,clientX:b.left+200,clientY:b.top+15}));})()`, target: { context }, awaitPromise: true });
+      await send("script.evaluate", { expression: `(async()=>{closeMenu();go("/sdcard");await new Promise(r=>setTimeout(r,200));document.querySelectorAll(".toast").forEach(t=>t.remove());addToPool(S.shown.slice(0,4).map(e=>({path:joinPath(S.cwd,e.name),entry:e})));await new Promise(r=>setTimeout(r,200));})()`, target: { context }, awaitPromise: true });
+      shot = await send("browsingContext.captureScreenshot", { context });
+      writeFileSync(join(here, "shot-pool.png"), Buffer.from(shot.result.data, "base64"));
+      // Files dragged in from the PC: the drop card over the list.
+      await send("script.evaluate", { expression: `(async()=>{document.querySelectorAll(".toast").forEach(t=>t.remove());clearPool();HARNESS.dragDrop({payload:{type:"enter",paths:["/a","/b","/c"]}});await new Promise(r=>setTimeout(r,200));})()`, target: { context }, awaitPromise: true });
+      shot = await send("browsingContext.captureScreenshot", { context });
+      writeFileSync(join(here, "shot-drop.png"), Buffer.from(shot.result.data, "base64"));
+      await send("script.evaluate", { expression: `HARNESS.dragDrop({payload:{type:"leave"}})`, target: { context }, awaitPromise: false });
+      await send("script.evaluate", { expression: `(()=>{const r=document.querySelector("#filelist .row");selectOnly(r._entry.name);const b=r.getBoundingClientRect();r.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true,button:2,clientX:b.left+200,clientY:b.top+15}));})()`, target: { context }, awaitPromise: true });
       shot = await send("browsingContext.captureScreenshot", { context });
       writeFileSync(join(here, "shot-menu.png"), Buffer.from(shot.result.data, "base64"));
     }

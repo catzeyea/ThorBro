@@ -4,6 +4,11 @@ Runs the real `ui/index.html` and `ui/js/*` in headless Firefox with a fake Taur
 (`stub.js`: in-memory Thor file system, adjustable adb latency, injectable failures) and checks
 the file manager's behavior (`tests.js`): cache, request ordering, virtualization, keyed updates,
 selection, rename/new folder/move/delete with rollback, cut/copy/paste, context menu, drag & drop.
+The file pool in the sidebar (empty/filled states, dropping only collects, "in pool" tags, "Copy to PC…" and Clear, count and size,
+duplicates and nested paths), the toolbar, back/forward history and the path bar, both context menus, Ctrl+O / "Add files …" /
+"Add folder …", the drop card for files dragged in from the PC, the "are you sure?" check for large amounts (direct drops, paste,
+"Copy to PC…"; size, item count, unknown size), the Cancel button of the strip, that rows can't be dragged out of the window,
+and `user-select` / `selectstart`.
 For the stream tab (fake scrcpy in `stub.js`): the three mirror tiles (both / top / bottom),
 failures under the status (toasted once) and Stop. Also: the transfer strip (events, "file X of Y", Copy to PC),
 the keyboard shortcuts panel and that shortcuts don't fire while typing.

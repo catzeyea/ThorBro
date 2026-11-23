@@ -31,6 +31,7 @@ async function pollDevice(force = false) {
   S.connected = device.connected;
   S.deviceMsg = device.message;
   $("#device").classList.toggle("on", device.connected);
+  if (changed) renderPool(); // pool.js: its actions need a connected Thor
   $("#device-text").textContent = device.connected ? `Connected: ${device.message}` : device.message;
   if (changed) {
     if (device.connected) { await loadPlaces(true); checkPins(); } // checkPins: pins.js

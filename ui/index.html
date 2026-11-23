@@ -56,73 +56,79 @@
   <section class="page active" id="page-files">
     <!-- Sidebar (js/start.js): the same locations as the #place drop-down, which replaces it in narrow windows. -->
     <aside class="side" id="side" aria-label="Locations">
-      <div class="side-card">
-        <span class="label">storage</span>
-        <div class="side-list" id="side-storage"></div>
+      <!-- Storages, pins and libraries scroll; the file pool below them always stays in view. -->
+      <div class="side-scroll">
+        <div class="side-card side-storage">
+          <span class="label">storage</span>
+          <div class="side-list" id="side-storage"></div>
+        </div>
+        <!-- Pinned Thor folders (js/pins.js). -->
+        <div class="side-card side-pins">
+          <span class="label">pinned</span>
+          <div class="side-list" id="side-pins"></div>
+          <span class="side-hint">Pin the open folder with the pin button.</span>
+        </div>
+        <div class="side-card side-libs">
+          <span class="label">libraries</span>
+          <div class="side-list" id="side-libs"></div>
+        </div>
       </div>
-      <!-- Pinned Thor folders (js/pins.js). -->
-      <div class="side-card side-pins">
-        <span class="label">pinned</span>
-        <div class="side-list" id="side-pins"></div>
-        <span class="side-hint">Pin the open folder with the pin button.</span>
-      </div>
-      <div class="side-card side-libs">
-        <span class="label">libraries</span>
-        <div class="side-list" id="side-libs"></div>
+      <!-- File pool (js/pool.js): rows dragged in here are only collected; "Copy to PC…" copies them to the PC. -->
+      <div class="pool is-empty" id="pool" role="region" aria-label="File pool">
+        <div class="pool-head">
+          <div class="pool-titles"><span class="pool-title">File pool</span><span class="pool-count" id="pool-count"></span></div>
+          <img class="pool-mascot" id="pool-mascot" src="assets/mascot/thorbro-wait.png" alt="" width="64" height="64">
+        </div>
+        <span class="pool-hint" id="pool-intro">Collect files and folders from the Thor here, then copy them all to your PC in one go. Drag them in from the list. The Thor stays untouched.</span>
+        <span class="pool-drop" id="pool-drop">Drop here</span>
+        <div class="pool-items" id="pool-items"></div>
+        <div class="pool-foot" id="pool-foot">
+          <span class="pool-hint">You pick the folder on your PC next. Nothing on the Thor changes.</span>
+          <button type="button" class="primary" id="pool-save">Copy to PC…</button>
+          <button type="button" class="danger flat" id="pool-clear" title="Empties the pool. Files on the Thor are not touched.">Clear pool</button>
+        </div>
       </div>
     </aside>
     <div class="files-main">
       <div class="toolbar">
+        <!-- Narrow windows only: replaces the storage / library part of the sidebar (see CSS). -->
         <select id="place" aria-label="Location"></select>
-        <button class="icon" id="back" title="Back (Alt+Left)" aria-label="Back" disabled>←</button>
-        <button class="icon" id="forward" title="Forward (Alt+Right)" aria-label="Forward" disabled>→</button>
-        <button class="icon" id="up" title="Up one folder (Backspace, Alt+Up)" aria-label="Up one folder">↑</button>
-        <button class="icon" id="reload" title="Reload (F5)" aria-label="Reload">↻</button>
-        <!-- Pins the open folder (js/pins.js fills in the icon and the label). -->
-        <button class="icon pin-btn" id="pin" title="Pin this folder (Ctrl+D)" aria-label="Pin this folder" aria-pressed="false"></button>
-        <div class="crumbs" id="crumbs"></div>
+        <button class="icon" id="back" title="Back (Alt+Left)" aria-label="Back" disabled><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg></button>
+        <button class="icon" id="forward" title="Forward (Alt+Right)" aria-label="Forward" disabled><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
+        <button class="icon" id="reload" title="Refresh (F5)" aria-label="Refresh"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg></button>
+        <!-- Path bar: every segment opens that folder (files.js); the pin button sits inside (js/pins.js). -->
+        <div class="pathbar">
+          <div class="crumbs" id="crumbs"></div>
+          <button class="pin-btn" id="pin" title="Pin this folder (Ctrl+D)" aria-label="Pin this folder" aria-pressed="false"></button>
+        </div>
         <label class="toggle hidden" id="hide-empty-wrap" title="Hide system folders without games in this games folder"><input type="checkbox" id="hide-empty"> Hide empty</label>
-      </div>
-      <div class="actions">
-        <button id="btn-send-files" class="primary">Send files …</button>
-        <button id="btn-send-dirs">Send folders …</button>
-        <span class="divider" aria-hidden="true"></span>
-        <button id="btn-mkdir" title="Ctrl+Shift+N">New folder</button>
-        <button id="btn-pull" title="Or just drag an entry out of the list onto your desktop or file manager">Copy to PC</button>
-        <button id="btn-delete" class="danger">Delete <kbd>Del</kbd></button>
-        <div class="toolbar-end">
-          <!-- Keyboard shortcuts: opens on hover, focus or click (js/start.js). Lists only shortcuts files.js handles. -->
-          <div class="keys" id="keys">
-            <button type="button" class="keys-btn" id="btn-keys" aria-label="Keyboard shortcuts" aria-expanded="false" aria-controls="keys-panel">?</button>
-            <div class="keys-panel hidden" id="keys-panel" role="dialog" aria-label="Keyboard shortcuts">
-              <span class="label">keyboard shortcuts</span>
-              <dl>
-                <div><dt>Open</dt><dd><kbd>Enter</kbd></dd></div>
-                <div><dt>Up one folder</dt><dd><kbd>Backspace</kbd></dd></div>
-                <div><dt>Back / forward</dt><dd><kbd>Alt + ←</kbd> <kbd>Alt + →</kbd></dd></div>
-                <div><dt>Refresh</dt><dd><kbd>F5</kbd></dd></div>
-                <div><dt>Select all</dt><dd><kbd>Ctrl + A</kbd></dd></div>
-                <div><dt>Copy</dt><dd><kbd>Ctrl + C</kbd></dd></div>
-                <div><dt>Cut</dt><dd><kbd>Ctrl + X</kbd></dd></div>
-                <div><dt>Paste here</dt><dd><kbd>Ctrl + V</kbd></dd></div>
-                <div><dt>Rename</dt><dd><kbd>F2</kbd></dd></div>
-                <div><dt>Delete</dt><dd><kbd>Delete</kbd></dd></div>
-                <div><dt>New folder</dt><dd><kbd>Ctrl + Shift + N</kbd></dd></div>
-                <div><dt>Pin / unpin folder</dt><dd><kbd>Ctrl + D</kbd></dd></div>
-              </dl>
-            </div>
-          </div>
-          <div class="more" id="more">
-            <button type="button" id="btn-more" aria-haspopup="menu" aria-expanded="false">More</button>
-            <div class="more-pop hidden" id="more-pop" role="menu">
-              <button id="btn-rename" role="menuitem">Rename <kbd>F2</kbd></button>
-              <button id="btn-unpack" role="menuitem" title="Extract an archive (zip, 7z, rar …) on the Thor into the same folder">Extract</button>
-              <button id="btn-set-lib" role="menuitem" title="Use the selected folder (or the open one) as games folder">Set games folder</button>
-              <button id="btn-esde" role="menuitem" title="Write ES-DE systeminfo.txt files into the system folders of a games folder (with preview)">Import ES-DE info</button>
-            </div>
+        <button id="btn-mkdir" class="mkdir" title="Ctrl+Shift+N">New folder</button>
+        <!-- Keyboard shortcuts: opens on hover, focus or click (js/start.js). Lists only shortcuts files.js handles. -->
+        <div class="keys" id="keys">
+          <button type="button" class="keys-btn" id="btn-keys" aria-label="Keyboard shortcuts" title="Keyboard shortcuts" aria-expanded="false" aria-controls="keys-panel">?</button>
+          <div class="keys-panel hidden" id="keys-panel" role="dialog" aria-label="Keyboard shortcuts">
+            <span class="label">keyboard shortcuts</span>
+            <dl>
+              <div><dt>Add files from the PC</dt><dd><kbd>Ctrl + O</kbd></dd></div>
+              <div><dt>Open</dt><dd><kbd>Enter</kbd></dd></div>
+              <div><dt>Up one folder</dt><dd><kbd>Backspace</kbd></dd></div>
+              <div><dt>Back / forward</dt><dd><kbd>Alt + ←</kbd> <kbd>Alt + →</kbd></dd></div>
+              <div><dt>Refresh</dt><dd><kbd>F5</kbd></dd></div>
+              <div><dt>Select all</dt><dd><kbd>Ctrl + A</kbd></dd></div>
+              <div><dt>Copy</dt><dd><kbd>Ctrl + C</kbd></dd></div>
+              <div><dt>Cut</dt><dd><kbd>Ctrl + X</kbd></dd></div>
+              <div><dt>Paste here</dt><dd><kbd>Ctrl + V</kbd></dd></div>
+              <div><dt>Rename</dt><dd><kbd>F2</kbd></dd></div>
+              <div><dt>Delete</dt><dd><kbd>Delete</kbd></dd></div>
+              <div><dt>New folder</dt><dd><kbd>Ctrl + Shift + N</kbd></dd></div>
+              <div><dt>Pin / unpin folder</dt><dd><kbd>Ctrl + D</kbd></dd></div>
+              <div><dt>Menu for the selection</dt><dd><kbd>Shift + F10</kbd></dd></div>
+            </dl>
           </div>
         </div>
       </div>
+      <!-- One line of help; the text depends on the state (files.js: updateHint). -->
+      <div class="files-hint" id="files-hint"></div>
       <div class="lib-hint hidden" id="no-lib">
         <span><b>No games folder found.</b> ThorBro looks for a <code>ROMs</code> folder on every storage.
           If your games are somewhere else (e.g. <code>/sdcard/lisu/Roms</code>), open or select that folder below.</span>
@@ -140,6 +146,14 @@
         <div class="list" id="filelist" tabindex="0" role="listbox" aria-multiselectable="true">
           <div class="list-sizer" id="list-sizer"><div class="band hidden" id="band"></div></div>
           <div class="list-msg hidden" id="list-msg"></div>
+        </div>
+        <!-- Shown while files from the PC are dragged over the window (js/transfer.js). -->
+        <div class="drop-card-wrap hidden" id="drop-card" aria-hidden="true">
+          <div class="drop-card">
+            <img src="assets/mascot/thorbro-base.png" alt="" width="80" height="80">
+            <span class="drop-card-title">Drop to add to the Thor</span>
+            <span class="drop-card-info">Goes into <b id="drop-card-dest"></b><span id="drop-card-what"></span></span>
+          </div>
         </div>
       </div>
       <!-- Transfer strip, driven by the "transfer" events from Rust (js/transfer.js). Hidden when nothing runs. -->
@@ -313,6 +327,7 @@
   <script src="js/device.js"></script>
   <script src="js/files.js"></script>
   <script src="js/files-actions.js"></script>
+  <script src="js/pool.js"></script>
   <script src="js/esde.js"></script>
   <script src="js/transfer.js"></script>
   <script src="js/saves.js"></script>

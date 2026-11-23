@@ -1,6 +1,7 @@
 // ThorBro UI – file manager tab, part 2: clipboard (cut / copy / paste), rename in place, new
-// folder, move, delete, copy to PC, the context menu, mouse selection (click, Ctrl/Shift click,
-// rubber band) and dragging rows: into a folder (move, Ctrl = copy) or out of the window to the PC.
+// folder, move, delete, the context menus, mouse selection (click, Ctrl/Shift click, rubber band)
+// and dragging rows: into a folder (move, Ctrl = copy) or into the file pool (pool.js, collects
+// only). Rows can't be dragged out of the window: files reach the PC only through the file pool.
 //
 // Changes are optimistic: the listing is updated first (mutateListing), then adb runs. A failed
 // part is rolled back and shown as error. beginOp/endOp (files.js) hold back background refreshes
@@ -79,7 +80,7 @@ function pasteInto(dest) {
   if (!FM.clip || !FM.clip.items.length) return toast("Nothing to paste");
   const { mode, items } = FM.clip;
   if (mode === "cut") FM.clip = null; // a cut is pasted once, like in Explorer / Nautilus
-  transferInto(dest, items, mode === "cut");
+  guardedTransfer(dest, items, mode === "cut"); // pool.js: asks first when it is a lot
   renderRows();
 }
 
@@ -88,20 +89,21 @@ function pasteInto(dest) {
  * - Move inside one storage: plain `mv`, instant, optimistic (moveInto).
  * - Move to another storage, or any copy: a job in the copy queue with progress and cancel
  *   (files::thor_copy_one). The list is refreshed when the queue reports it's done.
+ * Resolves when the instant part is done (the queued part runs on in the background).
+ * Callers that act on a user's drop or a paste of a lot of data go through guardedTransfer (pool.js).
  */
-function transferInto(dest, items, move) {
+async function transferInto(dest, items, move) {
   const intoItself = (item) => dest === item.path || dest.startsWith(item.path + "/");
   if (items.some(intoItself)) toast("A folder can't be put into itself", true);
   items = items.filter((item) => !intoItself(item));
   if (!items.length) return;
-  const destStorage = storageOf(dest);
-  const instant = move ? items.filter((item) => destStorage && storageOf(item.path) === destStorage) : [];
-  const queued = items.filter((item) => !instant.includes(item));
-  if (instant.length) moveInto(dest, instant);
+  const { instant, queued } = splitTransfer(dest, items, move); // pool.js
   if (queued.length) {
     // Field names as in files::Job (Rust, snake_case).
     enqueue(queued.map((item) => ({ ...job(item.path, dest), thor_copy: true, move_after: move })));
   }
+  if (instant.length) await moveInto(dest, instant);
+  if (move) prunePool(); // pool.js: moved items are no longer where the pool remembers them
 }
 
 // ---------------------------------------------------------------- Optimistic changes
@@ -308,27 +310,6 @@ async function deleteSelected() {
   }
 }
 
-/** "Copy to PC": copies the selected entries to ~/Downloads/thor, one after the other. Progress on the strip (transfer.js). */
-async function pullSelected() {
-  const entries = selectedOrHint();
-  if (!entries.length) return;
-  const dir = S.cwd;
-  let dest = null;
-  for (const [i, entry] of entries.entries()) {
-    pullProgress(i + 1, entries.length);
-    try {
-      // → commands::pull → files::pull ("transfer" progress events while it runs)
-      dest = await call("pull", { path: joinPath(dir, entry.name) });
-    } catch (_) {
-      pullFinished(null);
-      return; // shown as toast; stop instead of piling up errors
-    }
-  }
-  const text = `Copied ${itemsLabel(entries)} to ${dest}`;
-  pullFinished(text);
-  toast(text);
-}
-
 /** "Extract": unpacks the selected archive on the Thor into the open folder (via the copy queue). */
 function extractSelected() {
   const entry = focusedEntry();
@@ -340,10 +321,6 @@ function extractSelected() {
 }
 
 $("#btn-mkdir").onclick = newFolder;
-$("#btn-rename").onclick = renameFocused;
-$("#btn-delete").onclick = deleteSelected;
-$("#btn-pull").onclick = pullSelected;
-$("#btn-unpack").onclick = extractSelected;
 
 // ---------------------------------------------------------------- Context menu
 
@@ -397,40 +374,49 @@ window.addEventListener("blur", closeMenu);
 window.addEventListener("resize", closeMenu);
 $("#filelist").addEventListener("scroll", closeMenu, { passive: true });
 
-/** Menu for the selected rows. */
+/**
+ * Menu for the selected rows (DESIGN-UPDATE-5): Add to file pool | Cut, Copy, Paste | Rename,
+ * Delete. Two entries that used to be in the toolbar's "More" menu are added only where they
+ * apply: "Extract here" for one archive, "Use as games folder …" for one folder.
+ */
 function rowMenuItems() {
   const entries = selectedEntries().filter((entry) => !entry.pending);
   const one = entries.length === 1 ? entries[0] : null;
   const folder = one && one.dir ? joinPath(S.cwd, one.name) : null;
-  const items = [];
-  if (folder) items.push({ label: "Open", kbd: "Enter", run: () => openEntry(one) }, "-");
-  items.push(
+  const items = [
+    { label: "Add to file pool", run: addSelectionToPool, disabled: !entries.length },
+    "-",
     { label: "Cut", kbd: "Ctrl+X", run: () => setClip("cut"), disabled: !entries.length },
     { label: "Copy", kbd: "Ctrl+C", run: () => setClip("copy"), disabled: !entries.length },
-  );
-  if (folder) items.push({ label: "Paste into folder", run: () => pasteInto(folder), disabled: !FM.clip });
-  else items.push({ label: "Paste", kbd: "Ctrl+V", run: () => pasteInto(S.cwd), disabled: !FM.clip });
-  items.push("-", { label: "Rename …", kbd: "F2", run: renameFocused, disabled: !one });
-  items.push({ label: "Copy to PC", run: pullSelected, disabled: !entries.length });
+    { label: "Paste", kbd: "Ctrl+V", run: () => pasteInto(S.cwd), disabled: !FM.clip },
+    "-",
+  ];
   if (one && !one.dir && ARCHIVE_RE.test(one.name)) items.push({ label: "Extract here", run: extractSelected });
   if (folder) {
     const lib = libAt(folder);
     if (!lib) items.push({ label: "Use as games folder …", run: () => setGamesFolder() });
     else if (lib.custom) items.push({ label: "Stop using as games folder …", run: () => setGamesFolder() });
   }
-  items.push("-", { label: "Delete", kbd: "Del", run: deleteSelected, danger: true, disabled: !entries.length });
+  items.push("-");
+  if (one) items.push({ label: "Rename", kbd: "F2", run: renameFocused });
+  items.push({ label: "Delete", kbd: "Del", run: deleteSelected, danger: true, disabled: !entries.length });
   return items;
 }
 
-/** Menu for the empty area of the list. */
+/**
+ * Menu for the empty area of the list (DESIGN-UPDATE-5): Add files …, Add folder …, Paste (only
+ * when something is cut or copied), New folder. Inside a games folder also "Import ES-DE info …"
+ * (formerly in "More").
+ */
 function backgroundMenuItems() {
-  return [
-    { label: "New folder", kbd: "Ctrl+Shift+N", run: newFolder },
-    { label: "Paste", kbd: "Ctrl+V", run: () => pasteInto(S.cwd), disabled: !FM.clip },
-    "-",
-    { label: "Select all", kbd: "Ctrl+A", run: selectAll, disabled: !S.shown.length },
-    { label: "Refresh", kbd: "F5", run: refreshCurrent },
+  const items = [
+    { label: "Add files …", kbd: "Ctrl+O", run: pickFilesToSend }, // transfer.js
+    { label: "Add folder …", run: pickFoldersToSend },
   ];
+  if (FM.clip) items.push({ label: "Paste", kbd: "Ctrl+V", run: () => pasteInto(S.cwd) });
+  items.push({ label: "New folder", kbd: "Ctrl+Shift+N", run: newFolder });
+  if (inLibrary(S.cwd)) items.push("-", { label: "Import ES-DE info …", run: importEsdeInfo }); // esde.js
+  return items;
 }
 
 $("#filelist").addEventListener("contextmenu", (e) => {
@@ -467,17 +453,12 @@ function openMenuForFocus() {
  * deferred: a press on an already selected row: collapse the selection to it (or toggle it with
  *           Ctrl) on release, unless the press turned into a drag of the whole selection
  * down:     left button is held
- * busy:     a drag-out fetch is running
- * native:   an OS drag started by us is in progress
  * items:    rows being dragged inside the window ([{ path, entry }]), null otherwise
  */
-const DRAG = { start: null, deferred: null, down: false, busy: false, native: false, items: null };
+const DRAG = { start: null, deferred: null, down: false, items: null };
 
 /** Minimum mouse movement (px) before a press on a row counts as a drag. */
 const DRAG_THRESHOLD_PX = 8;
-
-/** Matches local paths inside the drag cache (files::drag_root), so our own drags aren't re-imported. */
-const FROM_DRAG_CACHE = /[\\/]thorbro[\\/]ziehen[\\/]/;
 
 $("#filelist").addEventListener("mousedown", (e) => {
   if (e.target.closest(".mini, input.rename")) return;
@@ -530,7 +511,7 @@ document.addEventListener("mousemove", (e) => {
   if (BAND.active) return updateBand(e);
   if (DRAG.items) return moveInternalDrag(e);
   const start = DRAG.start;
-  if (!start || !DRAG.down || DRAG.busy || S.modalOpen) return;
+  if (!start || !DRAG.down || S.modalOpen) return;
   if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_THRESHOLD_PX) return;
   DRAG.start = null;
   DRAG.deferred = null;
@@ -634,8 +615,9 @@ function stopAutoScroll() {
 
 // ---------------------------------------------------------------- Dragging rows inside the window
 //
-// Dragging selected rows onto a folder row or a breadcrumb moves them there (hold Ctrl to copy).
-// Leaving the window with the mouse button held turns it into a drag out to the PC.
+// Dragging selected rows onto a folder row or a breadcrumb moves them there (hold Ctrl to copy);
+// onto the file pool in the sidebar collects them. Outside the window nothing happens: the drag
+// simply has no target there (drag-out to other programs was removed in DESIGN-UPDATE-5).
 
 function beginInternalDrag(e) {
   const entries = selectedEntries().filter((entry) => !entry.pending);
@@ -647,15 +629,12 @@ function beginInternalDrag(e) {
   moveInternalDrag(e);
 }
 
-/** True if the mouse is outside the window (we still get events while the button is held). */
-function outsideWindow(e) {
-  return e.clientX < 0 || e.clientY < 0 || e.clientX >= innerWidth || e.clientY >= innerHeight;
-}
-
 /** The folder under the mouse that the dragged rows could go into: { path, row } or null. */
 function dropTargetAt(x, y) {
   const under = document.elementFromPoint(x, y);
   if (!under) return null;
+  // The file pool only collects, it never moves anything.
+  if (under.closest("#pool")) return { pool: true };
   const row = under.closest("#filelist .row");
   if (row) {
     const entry = row._entry;
@@ -670,17 +649,18 @@ function dropTargetAt(x, y) {
 
 function moveInternalDrag(e) {
   if (!e) return;
-  if (outsideWindow(e)) return dragOutOfWindow();
   const copy = e.ctrlKey || e.metaKey;
   const target = dropTargetAt(e.clientX, e.clientY);
   const ghost = $("#drag-ghost");
   ghost.style.transform = `translate(${e.clientX + 14}px, ${e.clientY + 14}px)`;
-  ghost.textContent = target ? `${copy ? "Copy" : "Move"} ${DRAG.label} to ${basename(target.path) || target.path}` : DRAG.label;
+  if (target && target.pool) ghost.textContent = `Add ${DRAG.label} to the file pool (the Thor stays untouched)`;
+  else ghost.textContent = target ? `${copy ? "Copy" : "Move"} ${DRAG.label} to ${basename(target.path) || target.path}` : DRAG.label;
   ghost.classList.toggle("copy", copy);
   const rowName = target && target.row ? target.row : null;
   if (FM.dropTarget !== rowName) { FM.dropTarget = rowName; renderRows(); }
   document.querySelectorAll("#crumbs button.drop").forEach((button) => button !== (target && target.crumb) && button.classList.remove("drop"));
   if (target && target.crumb) target.crumb.classList.add("drop");
+  $("#pool").classList.toggle("drop", !!(target && target.pool));
   autoScroll(e, false);
 }
 
@@ -689,6 +669,7 @@ function endInternalDrag() {
   document.body.classList.remove("dragging");
   $("#drag-ghost").classList.add("hidden");
   document.querySelectorAll("#crumbs button.drop").forEach((button) => button.classList.remove("drop"));
+  $("#pool").classList.remove("drop");
   stopAutoScroll();
   if (FM.dropTarget !== null) { FM.dropTarget = null; renderRows(); }
 }
@@ -697,55 +678,17 @@ function finishInternalDrag(e) {
   const items = DRAG.items;
   const target = dropTargetAt(e.clientX, e.clientY);
   endInternalDrag();
-  if (target) transferInto(target.path, items, !(e.ctrlKey || e.metaKey));
+  if (!target) return;
+  if (target.pool) return reportPoolAdd(addToPool(items), items.length); // collects only
+  // Direct drop onto a folder: asks first if it is a lot (see guardedTransfer in pool.js).
+  guardedTransfer(target.path, items, !(e.ctrlKey || e.metaKey));
 }
 
-// Leaving the page area while dragging rows: hand over to the OS drag (drag out to the PC).
-document.documentElement.addEventListener("mouseleave", () => { if (DRAG.items && DRAG.down) dragOutOfWindow(); });
-
-function dragOutOfWindow() {
-  const items = DRAG.items;
-  endInternalDrag();
-  if (items && !DRAG.busy) dragOut(items);
-}
-
-// ---------------------------------------------------------------- Drag out to the PC
-//
-// The files are fetched into a local cache first (drag_fetch), then a real OS drag starts
-// (drag_start) if the mouse button is still held.
-
-async function dragOut(items) {
-  DRAG.busy = true;
-  const label = items.length === 1 ? basename(items[0].path) : `${items.length} items`;
-  // Only mention the fetch if it takes noticeably long (cached files are instant).
-  const slowHint = setTimeout(() => toast(`Fetching ${label} from the Thor, then you can drag it out …`), 500);
-  try {
-    const locals = [];
-    for (const item of items) {
-      // → commands::drag_fetch → files::drag_fetch (progress via "transfer" events)
-      const fetched = await call("drag_fetch", { path: item.path });
-      locals.push(fetched.local);
-      FM.ready.add(item.path);
-    }
-    renderRows();
-    if (DRAG.down) {
-      DRAG.native = true;
-      await invoke("drag_start", { paths: locals }); // → commands::drag_start (emits "drag-done")
-    } else {
-      toast(`${label} is ready – drag it out again now`);
-    }
-  } catch (_) {
-    // The error was already shown as a toast.
-  } finally {
-    clearTimeout(slowHint);
-    DRAG.busy = false;
-  }
-}
-
-// Emitted by commands::start_os_drag when the OS drag ends; payload = was it dropped somewhere.
-T.event.listen("drag-done", ({ payload: dropped }) => {
-  DRAG.down = false;
-  DRAG.native = false;
-  $("#drop-overlay").classList.add("hidden");
-  if (dropped) toast("Copied to the PC");
-});
+// Selecting text or starting a browser drag of text must not happen while rows are pressed, dragged
+// or rubber-banded. (CSS user-select: none already covers this; this is the second line of defence
+// for engines that ignore it. Text fields are left alone.)
+const inTextField = (node) => !!(node && (node.nodeType === 1 ? node : node.parentElement)?.closest("input, textarea"));
+document.addEventListener("selectstart", (e) => {
+  if ((DRAG.start || DRAG.deferred || DRAG.items || BAND.active) && !inTextField(e.target)) e.preventDefault();
+}, true);
+document.addEventListener("dragstart", (e) => { if (!inTextField(e.target)) e.preventDefault(); }, true);

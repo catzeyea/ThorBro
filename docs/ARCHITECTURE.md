@@ -36,7 +36,7 @@ For screen mirroring it starts `scrcpy`.
 | `commands.rs` | All `#[tauri::command]` functions, i.e. everything the UI is allowed to call. Thin wrappers around the modules below. Also holds `AppState`. |
 | `cli.rs` | Command line: `thorbro stream / displays / list / status / pc / thor`. |
 | `adb.rs` | Finding and calling adb, shell quoting (`shell_quote`), `run-as` for private app folders, device status, storage locations. |
-| `files.rs` | File manager (list, rename, delete, fetch), copy queue PC → Thor with progress, dragging Thor → PC through a cache. |
+| `files.rs` | File manager (list, rename, delete, sizes), copy queue with progress and Cancel: PC → Thor, inside the Thor (verified moves), Thor → PC ("Copy to PC…" from the file pool). |
 | `library.rs` | Finding ES-DE `ROMs` folders and assigning dropped files to a system (Switch title ID, header bytes, file extension). |
 | `systems.rs` | Built-in list of known systems (aliases, extensions) for folders without ES-DE `systeminfo.txt`. |
 | `esde_import.rs` | "Import ES-DE info": preview and write ES-DE `systeminfo.txt` files (one place for the format), optional case-only renames to ES-DE folder names. |
@@ -66,15 +66,16 @@ For screen mirroring it starts `scrcpy`.
 | `js/dialogs.js` | Modal dialogs: `modal`, `dialog`, `ask`, `busyModal`, `folderPicker`. |
 | `js/device.js` | Tabs and device detection (`pollDevice`). |
 | `js/files.js` | File manager tab, part 1: locations, listing cache, virtualized list, selection, history, keyboard. |
-| `js/files-actions.js` | File manager tab, part 2: cut/copy/paste, rename in place, move, delete, context menu, dragging rows (into folders or out to the PC). |
-| `js/transfer.js` | Sending to the Thor: drag & drop, sort dialog, copy queue, transfer strip (shows the "transfer" events, incl. "file X of Y"). |
+| `js/files-actions.js` | File manager tab, part 2: cut/copy/paste, rename in place, move, delete, context menus, dragging rows (into folders or into the file pool). |
+| `js/transfer.js` | Sending to the Thor: drag & drop with the drop card, Ctrl+O / "Add files …", sort dialog, copy queue, transfer strip (shows the "transfer" events, incl. "file X of Y"). |
+| `js/pool.js` | The file pool in the sidebar (collect Thor files, "Copy to PC…"), the large-transfer confirmation used by drops and paste. |
 | `js/saves.js` | Game cards, card menu, sync flow. |
 | `js/saves-setup.js` | Adding a game (search, AI suggestion, check). |
 | `js/saves-import.js` | Importing a save. |
 | `js/stream.js` | Stream tab, sub-tab "Mirror Thor screens": three tiles (both / top / bottom, fixed ids 0 and 4), Stop, failures; the scrcpy display detection for the screen picker. |
 | `js/pcstream.js` | Stream tab, sub-tab "Stream PC games" (status chips, "Play on Thor", "Send to Thor app", pairing) and the Help page (Sunshine and login, addresses, Thor apps, screen picker, checklist, stream profile). |
 | `js/pins.js` | Pinned Thor folders: pin button in the path bar (Ctrl+D), "pinned" card in the sidebar, "pinned" row on the Start tab, "not found" state (`pins`, `add_pin`, `remove_pin`, `pins_found`). |
-| `js/start.js` | Start tab (drop zone, library tiles), the file manager's location sidebar, its "More" menu and keyboard shortcuts panel. |
+| `js/start.js` | Start tab (drop zone, library tiles), the file manager's location sidebar, its keyboard shortcuts panel. |
 | `js/main.js` | Startup: first device poll and timers. |
 
 The JS files are classic `<script>` files without `type="module"`. They share one global scope,
@@ -155,7 +156,6 @@ T.event.listen("transfer", async ({ payload: progress }) => { /* update the bar 
 |---|---|---|---|
 | `transfer` | `files.rs` | `transfer.js` | Progress while copying/extracting/fetching (`Progress`) |
 | `save-step` | `commands.rs` (`scan_game`, `do_import`) | `saves-setup.js`, `saves-import.js` | Status text for the spinner |
-| `drag-done` | `commands.rs` (`start_os_drag`) | `files.js` | `true` if the drag-out ended with a drop |
 
 On top of that there is one event that Tauri provides itself: `onDragDropEvent` reports files
 being dragged from the system onto the window (`transfer.js`).
@@ -189,8 +189,7 @@ being dragged from the system onto the window (`transfer.js`).
 
 1. **Drop.** The user drags e.g. `Zelda [0100F2C0115B6000].nsp` onto the window. Tauri calls the
    `onDragDropEvent` handler in `ui/js/transfer.js` with `type: "drop"` and the local paths.
-2. **Filter.** Paths from our own drag cache are ignored (that would be our own drag coming back
-   into the window). If the import dialog is open, the path goes there (`S.importTarget`).
+2. **Route.** If the import dialog is open, the path goes there (`S.importTarget`).
    Otherwise `incoming(paths)` is called.
 3. **Classify.** `incoming` calls `invoke("classify", { paths, cwd, lib: 0, force: false })`.
 4. **Command.** `commands::classify` takes the library from `AppState.libs` and builds an

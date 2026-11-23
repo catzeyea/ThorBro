@@ -20,7 +20,7 @@
     .filter(([p]) => p !== dir && p.startsWith(dir + "/") && !p.slice(dir.length + 1).includes("/"))
     .map(([p, e]) => ({ name: p.slice(dir.length + 1), dir: e.dir, size: e.size, mtime: e.mtime }));
 
-  const H = (window.HARNESS = { calls: [], latency: {}, fail: {}, defaultLatency: 30, fs, pins: [], maxPins: 12 });
+  const H = (window.HARNESS = { calls: [], latency: {}, fail: {}, defaultLatency: 30, fs, pins: [], maxPins: 12, bigSize: {} });
   // Fake scrcpy: detected displays, running display ids, failures; failStart[id] = error text.
   const opts = () => ({ max_size: 0, bitrate_mbps: 16, always_on_top: false });
   H.stream = {
@@ -91,12 +91,18 @@
       return { path: p, error: null };
     }),
     enqueue: () => null,
-    // "Copy to PC": like files::pull, one progress event (not cancellable, no position), then the folder.
-    pull: async ({ path }) => {
-      H.emit("transfer", { busy: true, text: `Copying ${path.split("/").pop()} to the PC`, detail: "", fraction: 0.5, dests: [], error: null, cancellable: false, cancelled: false, index: 0, count: 0 });
-      await new Promise((r) => setTimeout(r, 100)); // still copying after the event, like files::pull
-      return "/home/user/Downloads/thor";
-    },
+    // Sizes for the Pool and the large-transfer check (files::remote_sizes). H.bigSize[path] fakes a huge folder.
+    remote_sizes: ({ paths }) => paths.map((p) => {
+      if (p in H.bigSize) return H.bigSize[p];
+      const e = fs.get(p); if (!e) return null;
+      if (!e.dir) return e.size;
+      let total = 0;
+      for (const [k, v] of fs) if (k.startsWith(p + "/") && !v.dir) total += v.size;
+      return total;
+    }),
+    paths_exist: ({ paths }) => paths.map((p) => fs.has(p)),
+    // Drop card: total size of the dragged-in PC files (commands::local_sizes). Fake: 2 KiB per path.
+    local_sizes: ({ paths }) => paths.length * 2048,
     log: ({ msg }) => { H.logs = (H.logs || []).concat(msg); },
     known_systems: () => [],
     // Pinned folders, like commands::pins / add_pin / remove_pin / pins_found (settings.rs: order kept, cap 12).
@@ -155,7 +161,8 @@
   window.__TAURI__ = {
     core: { invoke },
     event: { listen: (name, cb) => { (listeners[name] ||= []).push(cb); return Promise.resolve(() => {}); } },
-    webview: { getCurrentWebview: () => ({ onDragDropEvent: () => Promise.resolve(() => {}) }) },
+    // The drag & drop handler is kept, so tests can send "enter" / "over" / "leave" / "drop" (H.dragDrop).
+    webview: { getCurrentWebview: () => ({ onDragDropEvent: (cb) => { H.dragDrop = cb; return Promise.resolve(() => {}); } }) },
     dialog: { open: async () => null },
   };
   H.emit = (name, payload) => (listeners[name] || []).forEach((cb) => cb({ payload }));

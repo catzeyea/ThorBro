@@ -1,7 +1,8 @@
 // ThorBro UI – file manager tab, part 1: locations, games folder setup, the folder listing with
 // its cache, the virtualized list, selection, history and keyboard shortcuts.
 // Part 2 (files-actions.js): clipboard, rename / new folder / move / delete, context menu and
-// dragging rows. Sending files *to* the Thor (drop, "Send files …") lives in transfer.js.
+// dragging rows. Sending files *to* the Thor (drop, Ctrl+O, "Add files …") lives in transfer.js,
+// the file pool (the way to the PC) in pool.js.
 //
 // How the list stays fast although every listing is an `adb shell` call:
 // - Listings are cached per path. Opening a folder shows the cached listing at once and refreshes
@@ -57,7 +58,6 @@ const FM = {
   edit: null,          // inline rename in progress: { name, isNew, cancel() }
   clip: null,          // clipboard: { mode: "cut" | "copy", items: [{ path, entry }], paths: Set }
   dropTarget: null,    // folder row highlighted while dragging rows inside the window
-  ready: new Set(),    // Thor paths already fetched for dragging out (row shows a small marker)
 };
 
 try {
@@ -172,7 +172,6 @@ async function setGamesFolder(openFolderOnly = false) {
   return true;
 }
 
-$("#btn-set-lib").onclick = () => setGamesFolder();
 $("#btn-lib-hint").onclick = () => setGamesFolder();
 
 // ---------------------------------------------------------------- System of a folder
@@ -294,6 +293,7 @@ function go(path, { history = true, focus = null } = {}) {
   }
   FM.cwdRoot = S.root;
   if (focus) FM.pendingFocus = focus;
+  renderPool(); // pool.js: its "target" line follows the open folder
   renderCrumbs();
   renderSidebar(); // highlight of the open location (start.js)
   updateNavButtons();
@@ -403,7 +403,7 @@ function goForward() {
   navigateTo(next);
 }
 
-/** One folder up; the folder we came from gets selected. */
+/** One folder up (Backspace, Alt+Up; there is no button, the path bar segments do the same). The folder we came from gets selected. */
 function goUp() {
   if (S.cwd === S.root) return;
   go(dirname(S.cwd), { focus: basename(S.cwd) });
@@ -416,13 +416,12 @@ function openEntry(entry) {
 
 $("#back").onclick = goBack;
 $("#forward").onclick = goForward;
-$("#up").onclick = goUp;
 $("#reload").onclick = refreshCurrent;
 
+/** Back / Forward are disabled (shown dimmed) when there is nowhere to go. */
 function updateNavButtons() {
   $("#back").disabled = !FM.back.length;
   $("#forward").disabled = !FM.fwd.length;
-  $("#up").disabled = S.cwd === S.root;
 }
 
 /** Breadcrumb buttons for the current path. Each crumb is also a drop target (see files-actions.js). */
@@ -437,6 +436,7 @@ function renderCrumbs() {
     html.push(`<span class="sep">/</span><button data-path="${esc(pathSoFar)}">${esc(part)}</button>`);
   }
   crumbs.innerHTML = html.join("");
+  crumbs.lastElementChild.classList.add("here"); // the open folder (highlighted, like in the design)
   crumbs.title = S.cwd;
   // Reading scrollWidth forces a layout; doing it in the next frame batches it with the paint.
   requestAnimationFrame(() => { crumbs.scrollLeft = crumbs.scrollWidth; });
@@ -540,7 +540,7 @@ function renderFiles(placeholder) {
   messageEl.textContent = message;
   messageEl.classList.toggle("hidden", !message);
   updateSortHeader();
-  updateActionButtons();
+  updateHint();
   renderRows();
 }
 
@@ -615,11 +615,12 @@ function updateRow(row, entry, index) {
   row.classList.toggle("cut", !!(FM.clip && FM.clip.mode === "cut" && FM.clip.paths.has(path)));
   row.classList.toggle("drop", FM.dropTarget === entry.name);
   row.classList.toggle("pending", !!entry.pending);
-  row.classList.toggle("ready", FM.ready.has(path));
+  const pooled = inPool(path); // pool.js
+  row.classList.toggle("inpool", pooled);
   row.classList.toggle("faded", !!(system && system.count === 0));
   if (FM.edit && FM.edit.name === entry.name) return; // the text field owns the name cell
   const systemKey = system ? `${system.id}|${system.full}|${system.origin}|${system.count}` : "";
-  const content = `${entry.name}\u0000${entry.dir}\u0000${entry.size}\u0000${entry.mtime}\u0000${systemKey}`;
+  const content = `${entry.name}\u0000${entry.dir}\u0000${entry.size}\u0000${entry.mtime}\u0000${systemKey}\u0000${pooled}`;
   if (row._content === content) return;
   row._content = content;
   const [, name, info, size, date] = row.children;
@@ -628,6 +629,7 @@ function updateRow(row, entry, index) {
   size.textContent = entry.dir ? "" : human(entry.size);
   date.textContent = formatTime(entry.mtime);
   info.textContent = "";
+  if (pooled) info.append(el(`<span class="pool-tag">in pool</span>`));
   if (!system) return;
   const label = system.full ? system.full + (ORIGIN_NOTE[system.origin] || "") : (system.id ? "" : "Unknown system");
   info.append(`${label}${label ? " · " : ""}${system.count}`);
@@ -674,7 +676,7 @@ function resetSelection() {
 
 function afterSelection() {
   syncSel();
-  updateActionButtons();
+  updateHint();
   renderRows();
 }
 
@@ -779,16 +781,19 @@ function typeAhead(char) {
   }
 }
 
-// ---------------------------------------------------------------- Action buttons
+// ---------------------------------------------------------------- Hint line under the toolbar
 
-/** Enables the action buttons that make sense for the current selection. */
-function updateActionButtons() {
-  const selected = FM.picked.size;
-  const focused = focusedEntry();
-  $("#btn-rename").disabled = selected !== 1;
-  $("#btn-delete").disabled = !selected;
-  $("#btn-pull").disabled = !selected;
-  $("#btn-unpack").disabled = !(selected === 1 && focused && !focused.dir && ARCHIVE_RE.test(focused.name));
+/** What the hint line says: how to add files at first, how to use the file pool once you work with rows. */
+const HINTS = {
+  add: "Drag files or folders from your PC into this window to add them to this folder. No drag and drop? Press Ctrl+O or right-click the list.",
+  pool: "Drag files from this list into the file pool on the left to copy them to your PC. Cut, copy, paste and rename work like in any file manager.",
+};
+
+/** Picks the hint: "pool" while rows are selected or the pool has items (FilesClean2/3), else "add". */
+function updateHint() {
+  const text = FM.picked.size || POOL.items.length ? HINTS.pool : HINTS.add;
+  const hint = $("#files-hint");
+  if (hint.textContent !== text) hint.textContent = text;
 }
 
 // ---------------------------------------------------------------- Keyboard
@@ -809,6 +814,7 @@ document.addEventListener("keydown", (e) => {
     else if (key === "ArrowUp") goUp();
     else return;
   } else if (ctrl && e.shiftKey && key === "n") newFolder();
+  else if (ctrl && key === "o") pickFilesToSend(); // transfer.js (folders: right-click "Add folder…")
   else if (ctrl && key === "d") togglePin(); // pins.js
   else if (ctrl && key === "a") selectAll();
   else if (ctrl && key === "x") setClip("cut");

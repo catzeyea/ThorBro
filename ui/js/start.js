@@ -1,5 +1,5 @@
 // ThorBro UI – the Start tab (drop zone, games folder, library tiles), the location sidebar of the
-// file manager, its "More" menu and the keyboard shortcuts panel. Pinned folders (on the Start tab
+// file manager and the keyboard shortcuts panel. Pinned folders (on the Start tab
 // and in the sidebar) are drawn by pins.js.
 // Nothing here loads data or calls Rust: everything comes from what loadPlaces() / refreshLibs()
 // (files.js) already put into S.places and S.libs, and every click goes through the existing
@@ -80,11 +80,11 @@ function renderStart() {
   renderStartPins(); // pins.js
 }
 
-// "Choose files" is the file manager's "Send files …": same dialog, same sorting, and the
+// "Choose files" is the file manager's Ctrl+O / "Add files …": same dialog, same sorting, and the
 // progress bar is on the Files tab, so that is where it happens.
 $("#start-choose").onclick = () => {
   showTab("files");
-  $("#btn-send-files").click();
+  pickFilesToSend(); // transfer.js
 };
 
 // ---------------------------------------------------------------- Files sidebar
@@ -129,18 +129,7 @@ function renderSidebar() {
   renderPinButton();
 }
 
-// ---------------------------------------------------------------- Files toolbar: "More" menu and "?" panel
-
-const MORE = { button: $("#btn-more"), pop: $("#more-pop") };
-
-function setMoreOpen(open) {
-  MORE.pop.classList.toggle("hidden", !open);
-  MORE.button.setAttribute("aria-expanded", String(open));
-}
-
-MORE.button.onclick = () => setMoreOpen(MORE.pop.classList.contains("hidden"));
-// The items keep their own click handlers (files-actions.js, esde.js); the menu just closes after.
-MORE.pop.addEventListener("click", (e) => { if (e.target.closest("button")) setMoreOpen(false); });
+// ---------------------------------------------------------------- Files toolbar: "?" panel
 
 /**
  * Keyboard shortcuts panel (the list itself is in index.html; it names only keys files.js handles).
@@ -165,15 +154,13 @@ KEYS.button.onclick = () => {
 };
 
 document.addEventListener("mousedown", (e) => {
-  if (!$("#more").contains(e.target)) setMoreOpen(false);
   if (!KEYS.wrap.contains(e.target)) setKeysOpen(false);
 });
-// Escape closes an open menu or panel first (capture phase: before the file list clears the selection).
+// Escape closes the open panel first (capture phase: before the file list clears the selection).
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   let target = null;
-  if (!MORE.pop.classList.contains("hidden")) { setMoreOpen(false); target = MORE.button; }
-  else if (!KEYS.panel.classList.contains("hidden")) { setKeysOpen(false); target = KEYS.button; }
+  if (!KEYS.panel.classList.contains("hidden")) { setKeysOpen(false); target = KEYS.button; }
   else return;
   if (document.activeElement !== target && target.closest("#page-files").contains(document.activeElement)) target.focus();
   e.preventDefault();

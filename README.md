@@ -21,7 +21,7 @@
 
 | Area | What it does |
 |---|---|
-| **Files** | File manager for the Thor (internal storage and SD card) that works like Explorer or Nautilus: multi-select, cut/copy/paste, drag entries into folders, right-click menu, sorting. Drag files in from your PC, drag entries out of the window straight onto your desktop. |
+| **Files** | File manager for the Thor (internal storage and SD card) that works like Explorer or Nautilus: multi-select, cut/copy/paste, drag entries into folders, right-click menu, sorting. Drag files in from your PC; collect Thor files in the file pool and copy them to the PC in one go. |
 | **Game sorting** | Drop a game into the window and ThorBro detects the system from the ES-DE folders and file extensions, then suggests the matching `ROMs/<system>` folder. Switch updates and DLC can go to `switch/update`. |
 | **Unpacking** | ThorBro extracts zip, 7z and tar itself, and can do it before copying. Archives already on the Thor can be extracted in place. File names are made SD-card safe automatically. |
 | **Saves** | Set up save folders per game, then push them PC → Thor or Thor → PC with one click. ThorBro shows which side is newer and **makes a backup before every overwrite**. You can also import saves from archives, e.g. 100% saves from the internet. |
@@ -111,11 +111,11 @@ Start ThorBro. The device name shows up in the top right once the Thor is detect
 
 ### Files & games
 
-- **Add games:** drag a file or folder into the window. If ThorBro recognizes a game, a dialog shows the suggested target folder (★). You can change it before copying. Regular files go straight into the current folder.
-- **Copy to PC:** drag entries out of the window onto your desktop or file manager, or press *Copy to PC*. Files end up in `Downloads/thor`.
+- **Add games and files:** drag a file or folder into the window (or press Ctrl+O, or right-click the list → *Add files …* / *Add folder …*). If ThorBro recognizes a game, a dialog shows the suggested target folder (★). You can change it before copying. Regular files go straight into the current folder.
+- **Copy to PC:** drag entries into the *file pool* in the sidebar (or right-click → *Add to file pool*), then press *Copy to PC…* and pick a folder. It runs in the copy queue with progress and *Cancel*, never overwrites files on the PC, and leaves the Thor untouched.
 - **Organize on the Thor:** select with click, Ctrl+click, Shift+click, Ctrl+A or by dragging a frame on the empty area. Drag entries onto a folder or a part of the path bar to move them (hold Ctrl to copy). Cut/copy/paste work with Ctrl+X/C/V and the right-click menu. Moving inside one storage is instant; copying, or moving between internal storage and SD card, runs in the copy queue with progress and *Cancel*.
-- **Pinned folders:** the pin button next to refresh (or Ctrl+D) pins the open Thor folder, e.g. where your screenshots land. Pins show in the sidebar and on the Start tab; one click opens them. Up to 12 pins; a folder that is gone shows as "not found" and can be unpinned with × or right-click.
-- **Keys:** Enter open · Backspace or Alt+Up up · Alt+Left/Right back/forward · F2 rename · Del delete · Ctrl+Shift+N new folder · Ctrl+D pin/unpin folder · F5 refresh · type letters to jump to a name.
+- **Pinned folders:** the pin button in the path bar (or Ctrl+D) pins the open Thor folder, e.g. where your screenshots land. Pins show in the sidebar and on the Start tab; one click opens them. Up to 12 pins; a folder that is gone shows as "not found" and can be unpinned with × or right-click.
+- **Keys:** Ctrl+O add files · Backspace or Alt+Up up · Alt+Left/Right back/forward · F2 rename · Del delete · Ctrl+Shift+N new folder · Ctrl+D pin/unpin folder · F5 refresh · Enter open · Shift+F10 menu · type letters to jump to a name. Click a part of the path bar to go up.
 - **Archives:** when dropping, you can tick *Extract first*. It's pre-ticked for systems whose emulator can't read packed games. rar and tar.xz need [7-Zip](https://www.7-zip.org) on the PC.
 
 ### Saves
@@ -188,7 +188,6 @@ Found a bug or have an idea? [Open an issue](../../issues). Please include your 
 |---|---|---|---|
 | Configured games | `~/.config/thor-save/games.json` | `%APPDATA%\thor-save\games.json` | `~/Library/Application Support/thor-save/games.json` |
 | Save backups | `~/.local/share/thor-save/backups/` | `%APPDATA%\thor-save\backups\` | `~/Library/Application Support/thor-save/backups/` |
-| Files pulled from the Thor | `~/Downloads/thor/` | `Downloads\thor\` | `~/Downloads/thor/` |
 
 ThorBro doesn't send anything to the internet. The only exception is the optional AI save search, which passes the full folder paths it found to Claude Code.
 

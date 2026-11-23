@@ -7,7 +7,7 @@ measured on a real Thor (no device was attached while writing this).
 ## What is *not* the problem
 
 - **The UI thread is not blocked by adb.** Every file manager command (`list_dir`, `make_dir`,
-  `rename`, `delete`, `pull`, `drag_fetch`) is an `async` Tauri command that runs its adb call
+  `rename`, `delete`, `remote_sizes`, `paths_exist`) is an `async` Tauri command that runs its adb call
   through `run_blocking` → `spawn_blocking` (`src/commands.rs:55-58`, `:180-208`). `invoke` returns a
   promise; the webview keeps painting while adb runs.
 - **The listing itself is one adb round trip.** `files::listdir` runs a single
