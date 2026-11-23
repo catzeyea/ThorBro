@@ -20,7 +20,7 @@
     .filter(([p]) => p !== dir && p.startsWith(dir + "/") && !p.slice(dir.length + 1).includes("/"))
     .map(([p, e]) => ({ name: p.slice(dir.length + 1), dir: e.dir, size: e.size, mtime: e.mtime }));
 
-  const H = (window.HARNESS = { calls: [], latency: {}, fail: {}, defaultLatency: 30, fs });
+  const H = (window.HARNESS = { calls: [], latency: {}, fail: {}, defaultLatency: 30, fs, pins: [], maxPins: 12 });
   // Fake scrcpy: detected displays, running display ids, failures; failStart[id] = error text.
   const opts = () => ({ max_size: 0, bitrate_mbps: 16, always_on_top: false });
   H.stream = {
@@ -91,8 +91,26 @@
       return { path: p, error: null };
     }),
     enqueue: () => null,
+    // "Copy to PC": like files::pull, one progress event (not cancellable, no position), then the folder.
+    pull: async ({ path }) => {
+      H.emit("transfer", { busy: true, text: `Copying ${path.split("/").pop()} to the PC`, detail: "", fraction: 0.5, dests: [], error: null, cancellable: false, cancelled: false, index: 0, count: 0 });
+      await new Promise((r) => setTimeout(r, 100)); // still copying after the event, like files::pull
+      return "/home/user/Downloads/thor";
+    },
     log: ({ msg }) => { H.logs = (H.logs || []).concat(msg); },
     known_systems: () => [],
+    // Pinned folders, like commands::pins / add_pin / remove_pin / pins_found (settings.rs: order kept, cap 12).
+    pins: () => H.pins.map((p) => ({ ...p })),
+    add_pin: ({ storage, path }) => {
+      if (!(path === storage || path.startsWith(storage + "/"))) throw `${path} is not on ${storage}`;
+      if (!H.pins.some((p) => p.storage === storage && p.path === path)) {
+        if (H.pins.length >= H.maxPins) throw `You can pin up to ${H.maxPins} folders. Unpin one first.`;
+        H.pins.push({ storage, path });
+      }
+      return H.pins.map((p) => ({ ...p }));
+    },
+    remove_pin: ({ storage, path }) => { H.pins = H.pins.filter((p) => !(p.storage === storage && p.path === path)); return H.pins.map((p) => ({ ...p })); },
+    pins_found: ({ paths }) => paths.map((p) => !!fs.get(p)?.dir),
     classify: () => [],
     cancel_transfer: () => false,
     games: () => ({}),

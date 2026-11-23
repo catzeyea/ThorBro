@@ -7,11 +7,12 @@
 
 document.querySelectorAll(".tab").forEach((button) => (button.onclick = () => showTab(button.dataset.tab)));
 
-/** Switches to "files", "saves" or "stream". */
+/** Switches to "start", "files", "saves" or "stream". */
 function showTab(tab) {
   S.tab = tab;
   document.querySelectorAll(".tab").forEach((button) => button.classList.toggle("active", button.dataset.tab === tab));
   document.querySelectorAll(".page").forEach((page) => page.classList.toggle("active", page.id === "page-" + tab));
+  if (tab === "start") { renderStart(); checkPins(); } // pins.js: pinned folders may have changed
   if (tab === "saves") loadGames();
   if (tab === "stream") streamStatus();
 }
@@ -32,10 +33,10 @@ async function pollDevice(force = false) {
   $("#device").classList.toggle("on", device.connected);
   $("#device-text").textContent = device.connected ? `Connected: ${device.message}` : device.message;
   if (changed) {
-    if (device.connected) await loadPlaces(true);
+    if (device.connected) { await loadPlaces(true); checkPins(); } // checkPins: pins.js
     else { S.entries = []; FM.status = "offline"; clearDirCache(); renderFiles(); updateLibHint(); }
     if (S.tab === "saves") refreshCards();
-    if (S.tab === "stream" && PCS.sub === "pc") pcThorApps();
+    if (S.tab === "stream" && PCS.sub !== "mirror") pcThorApps();
   }
 }
 $("#device").onclick = () => pollDevice(true);

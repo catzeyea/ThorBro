@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ThorBro Files</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=Inconsolata:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+.tab:hover{background:rgba(239,231,210,.12)}
+.btn:hover{transform:translate(-1px,-1px)}
+.side:hover{background:rgba(239,231,210,.1)}
+</style>
+</helmet>
+<div style="min-height: 900px; box-sizing: border-box; padding: 28px 48px 64px; font-family: {{fontStack}}; color: #EFE7D2; background: #1a1e1f">
+<div style="max-width: 1344px; margin: 0 auto; display: flex; flex-direction: column; gap: 30px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px">
+<img src="/_blob/0eb3e09f856e1c33cce2d17a04f50fa1" alt="" width="56" height="56" style="width: 56px; height: 56px; display: block">
+<span style="font-weight: 700; font-size: 28px; letter-spacing: -0.01em">ThorBro</span>
+</div>
+<nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<a class="tab" href="Main.dc.html" style="padding: 9px 20px; border-radius: 16px; border: 2px solid transparent; font-weight: 500">Start</a>
+<a class="tab" href="Files.dc.html" style="padding: 9px 22px; border-radius: 22px 16px 24px 15px / 16px 22px 14px 24px; border: 2px solid #EFE7D2; background: #F0A94B; color: #1a1e1f; font-weight: 600; box-shadow: 3px 3px 0 #7a4a0f; transform: rotate(-1deg)">Files</a>
+<a class="tab" href="Files.dc.html" style="padding: 9px 20px; border-radius: 16px; border: 2px solid transparent; font-weight: 500">Saves</a>
+<a class="tab" href="PCStream.dc.html" style="padding: 9px 20px; border-radius: 16px; border: 2px solid transparent; font-weight: 500">Stream</a>
+</nav>
+<div style="display: inline-flex; align-items: center; gap: 10px; padding: 9px 18px; border-radius: 18px 22px 16px 24px / 22px 16px 24px 18px; border: 2px solid rgba(239,231,210,0.7); font-weight: 500; font-size: 15px">
+<span style="width: 10px; height: 10px; border-radius: 50%; background: #A5B98C"></span>AYN Thor, USB
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 30px">
+
+<aside aria-label="Locations" style="flex: 0 0 270px; display: flex; flex-direction: column; gap: 26px">
+<div style="padding: 18px 16px 16px; border-radius: 22px 18px 24px 16px / 18px 24px 16px 22px; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; box-shadow: 5px 5px 0 #0c0f0f; display: flex; flex-direction: column; gap: 4px">
+<span style="padding: 0 10px 6px; font-weight: 500; font-size: 14px; line-height: 1; color: #B4B6AA">storage</span>
+<a class="side" href="Files.dc.html" style="padding: 10px 12px; border-radius: 14px 10px 14px 11px; border: 2px solid #EFE7D2; background: #A5B98C; color: #1a1e1f; font-weight: 600">Internal storage</a>
+<a class="side" href="Files.dc.html" style="padding: 10px 14px; border-radius: 12px; border: 2px solid transparent; font-weight: 500">SD card</a>
+</div>
+<div style="padding: 18px 16px 16px; border-radius: 24px 16px 20px 22px / 16px 22px 24px 18px; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; box-shadow: 6px 4px 0 #0c0f0f; display: flex; flex-direction: column; gap: 4px"><span style="padding: 0 10px 6px; font-size: 14px; font-weight: 500; line-height: 1; color: #B4B6AA">pinned</span><a class="side" href="Files.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 13px 10px 14px 11px; border: 2px solid transparent; font-weight: 500"><span style="color: #F0A94B; display: inline-flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 14v7"/></svg></span><span style="flex: 1">Screenshots</span></a><a class="side" href="Files.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 13px 10px 14px 11px; border: 2px solid transparent; font-weight: 500"><span style="color: #F0A94B; display: inline-flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 14v7"/></svg></span><span style="flex: 1">Saves backup</span></a><a class="side" href="Files.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 13px 10px 14px 11px; border: 2px solid transparent; font-weight: 500"><span style="color: #F0A94B; display: inline-flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 14v7"/></svg></span><span style="flex: 1">Mods</span></a><span style="padding: 8px 12px 0; font-size: 13px; color: #B4B6AA">Pin the open folder with the pin button.</span></div><div style="padding: 18px 16px 16px; border-radius: 18px 24px 16px 22px / 24px 16px 22px 18px; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; box-shadow: 4px 6px 0 #0c0f0f; display: flex; flex-direction: column; gap: 4px">
+<span style="padding: 0 10px 6px; font-weight: 500; font-size: 14px; line-height: 1; color: #B4B6AA">libraries</span>
+<sc-for list="{{libs}}" as="lib" hint-placeholder-count="6">
+<a class="side" href="Files.dc.html" style="display: flex; align-items: baseline; gap: 12px; padding: 9px 12px; border-radius: 13px 10px 14px 11px; border: 2px solid {{lib.border}}; background: {{lib.bg}}; color: {{lib.fg}}; font-weight: {{lib.weight}}">
+<span style="flex: 1">{{lib.name}}</span>
+<span style="font-weight: 600; font-size: 15px; line-height: 1">{{lib.count}}</span>
+</a>
+</sc-for>
+</div>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+
+<div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch">
+<button type="button" aria-label="Up one folder" style="width: 46px; height: 46px; border-radius: 15px 12px 16px 12px; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; color: #EFE7D2; font-family: inherit; font-weight: 600; font-size: 20px; cursor: pointer">↑</button>
+<button type="button" aria-label="Refresh" style="width: 46px; height: 46px; border-radius: 12px 16px 12px 15px; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; color: #EFE7D2; font-family: inherit; font-weight: 600; font-size: 20px; cursor: pointer">↻</button><button type="button" aria-label="Pin this folder" title="Pin this folder" style="width: 46px; height: 46px; display: inline-flex; align-items: center; justify-content: center; border-radius: 15px 12px 13px 16px; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; color: #EFE7D2; cursor: pointer"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 14v7"/></svg></button>
+<div style="flex: 1 1 360px; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0 20px; height: 46px; box-sizing: border-box; border-radius: 16px 14px 18px 13px / 14px 18px 13px 16px; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; font-weight: 500; font-size: 17px">
+<span>Internal storage</span><span style="color: #B4B6AA">/</span><span>ROMs</span><span style="color: #B4B6AA">/</span><span style="color: #F0A94B; font-weight: 600">switch</span>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<button class="btn" type="button" style="padding: 11px 24px; border-radius: 20px 24px 18px 26px / 24px 18px 26px 20px; border: 2px solid #EFE7D2; background: #F0A94B; color: #1a1e1f; font-family: inherit; font-weight: 600; font-size: 15px; box-shadow: 3px 3px 0 #7a4a0f; cursor: pointer">Send files</button>
+<button class="btn" type="button" style="padding: 11px 18px; border-radius: 16px 13px 17px 12px; border: 2px solid rgba(239,231,210,0.78); background: transparent; color: #EFE7D2; font-family: inherit; font-weight: 500; font-size: 15px; cursor: pointer">Send folders</button>
+<span style="width: 2px; height: 26px; margin: 0 4px; background: rgba(239,231,210,0.3)"></span>
+<button class="btn" type="button" style="padding: 11px 18px; border-radius: 13px 17px 12px 16px; border: 2px solid rgba(239,231,210,0.78); background: transparent; color: #EFE7D2; font-family: inherit; font-weight: 500; font-size: 15px; cursor: pointer">New folder</button>
+<button class="btn" type="button" style="padding: 11px 18px; border-radius: 12px 16px 13px 17px; border: 2px solid rgba(239,231,210,0.78); background: transparent; color: #EFE7D2; font-family: inherit; font-weight: 500; font-size: 15px; cursor: pointer">Copy to PC</button>
+<button class="btn" type="button" style="padding: 11px 18px; border-radius: 15px 13px 16px 12px; border: 2px solid #FF9C84; background: transparent; color: #FF9C84; font-family: inherit; font-weight: 500; font-size: 15px; cursor: pointer">Delete</button>
+<div style="margin-left: auto; position: relative; display: flex; align-items: center; gap: 10px"><button type="button" aria-label="Keyboard shortcuts" aria-expanded="true" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid #EFE7D2; background: #252a2a; color: #EFE7D2; font-family: inherit; font-weight: 700; font-size: 18px; cursor: pointer">?</button><button class="btn" type="button" style="padding: 11px 18px; border-radius: 13px 16px 12px 15px; border: 2px solid rgba(239,231,210,0.78); background: transparent; color: #EFE7D2; font-family: inherit; font-weight: 500; font-size: 15px; cursor: pointer">More</button><div role="dialog" aria-label="Keyboard shortcuts" style="position: absolute; right: 0; top: 58px; z-index: 5; width: 330px; box-sizing: border-box; padding: 18px 20px; border-radius: 20px 16px 22px 14px / 16px 22px 14px 20px; border: 2px solid #EFE7D2; background: #2b312e; box-shadow: 6px 6px 0 #0c0f0f; display: flex; flex-direction: column; gap: 11px"><span style="font-size: 13px; color: #B4B6AA; padding-bottom: 4px">keyboard shortcuts</span><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px"><span style="font-size: 14px; color: #C4C6BA">Rename</span><span style="padding: 3px 9px; border-radius: 8px 6px 9px 7px; border: 2px solid #EFE7D2; font-size: 13px; font-weight: 700; white-space: nowrap">F2</span></div><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px"><span style="font-size: 14px; color: #C4C6BA">Delete</span><span style="padding: 3px 9px; border-radius: 8px 6px 9px 7px; border: 2px solid #EFE7D2; font-size: 13px; font-weight: 700; white-space: nowrap">Delete</span></div><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px"><span style="font-size: 14px; color: #C4C6BA">Copy</span><span style="padding: 3px 9px; border-radius: 8px 6px 9px 7px; border: 2px solid #EFE7D2; font-size: 13px; font-weight: 700; white-space: nowrap">Ctrl + C</span></div><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px"><span style="font-size: 14px; color: #C4C6BA">Cut</span><span style="padding: 3px 9px; border-radius: 8px 6px 9px 7px; border: 2px solid #EFE7D2; font-size: 13px; font-weight: 700; white-space: nowrap">Ctrl + X</span></div><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px"><span style="font-size: 14px; color: #C4C6BA">Paste</span><span style="padding: 3px 9px; border-radius: 8px 6px 9px 7px; border: 2px solid #EFE7D2; font-size: 13px; font-weight: 700; white-space: nowrap">Ctrl + V</span></div><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px"><span style="font-size: 14px; color: #C4C6BA">Select all</span><span style="padding: 3px 9px; border-radius: 8px 6px 9px 7px; border: 2px solid #EFE7D2; font-size: 13px; font-weight: 700; white-space: nowrap">Ctrl + A</span></div><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px"><span style="font-size: 14px; color: #C4C6BA">Refresh</span><span style="padding: 3px 9px; border-radius: 8px 6px 9px 7px; border: 2px solid #EFE7D2; font-size: 13px; font-weight: 700; white-space: nowrap">F5</span></div><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px"><span style="font-size: 14px; color: #C4C6BA">Up one folder</span><span style="padding: 3px 9px; border-radius: 8px 6px 9px 7px; border: 2px solid #EFE7D2; font-size: 13px; font-weight: 700; white-space: nowrap">Backspace</span></div><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px"><span style="font-size: 14px; color: #C4C6BA">Open</span><span style="padding: 3px 9px; border-radius: 8px 6px 9px 7px; border: 2px solid #EFE7D2; font-size: 13px; font-weight: 700; white-space: nowrap">Enter</span></div></div></div>
+</div>
+
+<div style="border-radius: 22px 18px 24px 16px / 18px 24px 16px 22px; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; box-shadow: 5px 6px 0 #0c0f0f; overflow: hidden">
+<div style="overflow-x: auto">
+<div style="min-width: 560px">
+<div style="display: flex; gap: 16px; padding: 12px 24px 8px; border-bottom: 2px solid rgba(239,231,210,0.5); font-weight: 500; font-size: 13px; line-height: 1.1; color: #B4B6AA">
+<span style="flex: 1 1 auto">name</span><span style="width: 110px; flex: none">size</span><span style="width: 130px; flex: none">changed</span>
+</div>
+<sc-for list="{{rows}}" as="row" hint-placeholder-count="6">
+<div style="display: flex; align-items: center; gap: 16px; padding: 15px 24px; border-bottom: 1px solid rgba(239,231,210,0.16); background: {{row.bg}}; color: {{row.fg}}; font-size: 16px">
+<span style="flex: 1 1 auto; min-width: 0; font-weight: {{row.weight}}">{{row.name}}</span>
+<span style="width: 110px; flex: none; font-variant-numeric: tabular-nums">{{row.size}}</span>
+<span style="width: 130px; flex: none; font-variant-numeric: tabular-nums">{{row.date}}</span>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+
+<div role="status" aria-label="Transfer progress" style="display: flex; align-items: center; gap: 20px; padding: 14px 22px 14px 14px; border-radius: 20px 24px 18px 26px / 24px 18px 26px 20px; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; box-shadow: 4px 5px 0 #0c0f0f"><img src="/_blob/7276a3665aed568731ea151d46f9b2cf" alt="" width="64" height="64" style="width: 64px; height: 64px; flex: none; display: block"><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px"><div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 15px"><span style="font-weight: 600">Sending Hollow Knight.nsp</span><span style="color: #B4B6AA">file 2 of 3 · 62%</span></div><div style="height: 16px; border-radius: 10px 8px 11px 7px; border: 2px solid rgba(239,231,210,0.78); background: #1a1e1f; overflow: hidden"><div style="width: 62%; height: 100%; background: #F0A94B"></div></div></div><button class="btn" type="button" style="flex: none; padding: 10px 18px; border-radius: 14px 11px 15px 12px; border: 2px solid #FF9C84; background: transparent; color: #FF9C84; font-family: inherit; font-weight: 500; font-size: 14px; cursor: pointer">Cancel</button></div>
+</main>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"font":{"editor":"enum","default":"JetBrains Mono","options":["JetBrains Mono","Inconsolata","IBM Plex Sans"]},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const data = [
+      { name: 'Neon Abyss.nsz', size: '1.1 GB', date: '20 Nov 2026' },
+      { name: 'Celeste.nsp', size: '187 MB', date: '18 Nov 2026' },
+      { name: 'Hollow Knight.nsp', size: '1.6 GB', date: '18 Nov 2026', sel: true },
+      { name: 'Hollow Knight [update].nsp', size: '92 MB', date: '21 Nov 2026' },
+      { name: 'Stardew Valley.nsp', size: '480 MB', date: '02 Nov 2026' },
+      { name: 'media/', size: '', date: '02 Nov 2026', dir: true }
+    ];
+    const libs = [
+      { name: 'Switch', count: 24, sel: true },
+      { name: '3DS', count: 9 },
+      { name: 'PS2', count: 31 },
+      { name: 'PSP', count: 18 },
+      { name: 'GameCube', count: 12 },
+      { name: 'Wii', count: 7 }
+    ];
+    const stacks = { 'JetBrains Mono': "'JetBrains Mono', monospace", 'Inconsolata': "'Inconsolata', monospace", 'IBM Plex Sans': "'IBM Plex Sans', system-ui, sans-serif" };
+    return {
+      fontStack: stacks[this.props.font] || stacks['JetBrains Mono'],
+      rows: data.map((r) => ({
+        ...r,
+        weight: r.dir ? '600' : '500',
+        bg: r.sel ? '#A5B98C' : 'transparent',
+        fg: r.sel ? '#1a1e1f' : '#EFE7D2'
+      })),
+      libs: libs.map((l) => ({
+        ...l,
+        bg: l.sel ? '#A5B98C' : 'transparent',
+        fg: l.sel ? '#1a1e1f' : '#EFE7D2',
+        border: l.sel ? '#EFE7D2' : 'transparent',
+        weight: l.sel ? '600' : '500'
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

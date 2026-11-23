@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ThorBro Start</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=Inconsolata:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+.tile{transition:transform .12s ease, box-shadow .12s ease}
+.tile:hover{transform:translate(-2px,-3px) rotate(0deg) !important;box-shadow:8px 8px 0 #0c0f0f !important}
+.tab:hover{background:rgba(239,231,210,.12)}
+.btn:hover{transform:translate(-1px,-1px)}
+</style>
+</helmet>
+<div style="min-height: 900px; box-sizing: border-box; padding: 28px 48px 64px; font-family: {{fontStack}}; color: #EFE7D2; background: #1a1e1f">
+<div style="max-width: 1344px; margin: 0 auto; display: flex; flex-direction: column; gap: 36px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px">
+<img src="/_blob/0eb3e09f856e1c33cce2d17a04f50fa1" alt="" width="56" height="56" style="width: 56px; height: 56px; display: block">
+<span style="font-weight: 700; font-size: 28px; letter-spacing: -0.01em">ThorBro</span>
+</div>
+<nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<a class="tab" href="Main.dc.html" style="padding: 9px 22px; border-radius: 22px 16px 24px 15px / 16px 22px 14px 24px; border: 2px solid #EFE7D2; background: #F0A94B; color: #1a1e1f; font-weight: 600; box-shadow: 3px 3px 0 #7a4a0f; transform: rotate(-1deg)">Start</a>
+<a class="tab" href="Files.dc.html" style="padding: 9px 20px; border-radius: 16px; border: 2px solid transparent; font-weight: 500">Files</a>
+<a class="tab" href="Main.dc.html" style="padding: 9px 20px; border-radius: 16px; border: 2px solid transparent; font-weight: 500">Saves</a>
+<a class="tab" href="Main.dc.html" style="padding: 9px 20px; border-radius: 16px; border: 2px solid transparent; font-weight: 500">Stream</a>
+</nav>
+<div style="display: inline-flex; align-items: center; gap: 10px; padding: 9px 18px; border-radius: 18px 22px 16px 24px / 22px 16px 24px 18px; border: 2px solid rgba(239,231,210,0.7); font-weight: 500; font-size: 15px">
+<span style="width: 10px; height: 10px; border-radius: 50%; background: #A5B98C"></span>AYN Thor, USB
+</div>
+</div>
+
+<section aria-label="Send games" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 28px; padding: 34px 44px 34px 36px; border-radius: 30px 26px 34px 24px / 26px 32px 24px 30px; border: 2px dashed #A5B98C; background: #20252500">
+<div style="display: flex; align-items: center; gap: 30px; flex: 1 1 520px; min-width: 0">
+<img src="/_blob/0eb3e09f856e1c33cce2d17a04f50fa1" alt="" width="112" height="112" style="width: 112px; height: 112px; flex: none; transform: rotate(-5deg)">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-weight: 700; font-size: 46px; letter-spacing: -0.02em; line-height: 1.05">Drop games here</h1>
+<p style="margin: 0; max-width: 540px; font-size: 17px; line-height: 1.5; color: #C4C6BA">A game, update, DLC or cheat from anywhere. ThorBro finds the right folder on your Thor.</p>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px">
+<span style="font-size: 13px; color: #B4B6AA">games folder</span>
+<span style="font-weight: 600; font-size: 18px">Internal storage / ROMs</span>
+<a class="btn" href="Files.dc.html" style="margin-top: 4px; padding: 12px 26px; border-radius: 20px 24px 18px 26px / 24px 18px 26px 20px; border: 2px solid #EFE7D2; background: #A5B98C; color: #1a1e1f; font-weight: 600; box-shadow: 3px 3px 0 #4a5c38">Choose files</a>
+</div>
+</section>
+
+<section aria-label="Libraries" style="display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 16px">
+<h2 style="margin: 0; font-weight: 700; font-size: 30px">Libraries</h2>
+<span style="font-weight: 500; font-size: 16px; color: #B4B6AA">open one, or drop right onto it</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 26px 24px">
+<sc-for list="{{libs}}" as="lib" hint-placeholder-count="8">
+<a class="tile" href="Files.dc.html" style="display: flex; flex-direction: column; gap: 8px; padding: 22px 24px; min-height: 150px; box-sizing: border-box; border-radius: {{lib.radius}}; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; box-shadow: {{lib.shadow}}; transform: rotate({{lib.rot}}deg)">
+<span style="font-weight: 700; font-size: 30px; line-height: 1.1">{{lib.name}}</span>
+<span style="font-size: 14px; color: #B4B6AA">{{lib.folder}}</span>
+<span style="margin-top: auto; font-weight: 600; font-size: 17px; line-height: 1; color: #F0A94B">{{lib.count}} games</span>
+</a>
+</sc-for>
+</div>
+</section>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"font":{"editor":"enum","default":"JetBrains Mono","options":["JetBrains Mono","Inconsolata","IBM Plex Sans"]},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const base = [
+      { name: 'Switch', folder: 'switch/', count: 24 },
+      { name: '3DS', folder: 'n3ds/', count: 9 },
+      { name: 'PS2', folder: 'ps2/', count: 31 },
+      { name: 'PSP', folder: 'psp/', count: 18 },
+      { name: 'GameCube', folder: 'gc/', count: 12 },
+      { name: 'Wii', folder: 'wii/', count: 7 },
+      { name: 'SNES', folder: 'snes/', count: 64 },
+      { name: 'GBA', folder: 'gba/', count: 45 }
+    ];
+    const radii = [
+      '22px 18px 24px 16px / 18px 24px 16px 22px',
+      '18px 24px 16px 22px / 24px 16px 22px 18px',
+      '24px 16px 20px 22px / 16px 22px 24px 18px',
+      '16px 22px 24px 18px / 22px 18px 16px 24px'
+    ];
+    const rots = [-0.6, 0.4, -0.3, 0.7, 0.5, -0.7, 0.3, -0.4];
+    const shadows = [
+      '5px 5px 0 #0c0f0f', '4px 6px 0 #0c0f0f', '6px 4px 0 #0c0f0f', '5px 6px 0 #0c0f0f',
+      '4px 5px 0 #0c0f0f', '6px 5px 0 #0c0f0f', '5px 4px 0 #0c0f0f', '4px 4px 0 #0c0f0f'
+    ];
+    const stacks = { 'JetBrains Mono': "'JetBrains Mono', monospace", 'Inconsolata': "'Inconsolata', monospace", 'IBM Plex Sans': "'IBM Plex Sans', system-ui, sans-serif" };
+    return {
+      fontStack: stacks[this.props.font] || stacks['JetBrains Mono'],
+      libs: base.map((l, i) => ({
+        ...l,
+        radius: radii[(i * 3 + 1) % 4],
+        rot: rots[i],
+        shadow: shadows[i]
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,12 +1,17 @@
-// ThorBro UI – Stream tab, sub-tab "Stream PC games to your Thor" (src/pcstream/).
-// Sunshine runs on the PC, Moonlight on the Thor. This page checks both sides, helps with the
+// ThorBro UI – Stream tab, sub-tab "Stream PC games" and the Help page (src/pcstream/).
+// Sunshine runs on the PC, Moonlight on the Thor. This checks both sides, helps with the
 // login and pairing, lists Sunshine's apps and starts one on the Thor over adb.
 // All Sunshine requests are made in Rust (no Origin header, login from the OS keychain).
+//
+// Layout: the "Stream PC games" view shows only status chips, "Play on Thor", the Thor app card
+// (Send to Thor app, Pair Moonlight) and whether something streams. Details (Sunshine, login,
+// addresses, Thor apps, screen picker, checklist, stream profile) are sections of the Help page.
 "use strict";
 
 /** State of the PC streaming page. */
 const PCS = {
-  sub: "mirror",     // visible sub-tab of the Stream page: "mirror" or "pc"
+  sub: "mirror",     // visible part of the Stream page: "mirror", "pc" or "help"
+  helpFrom: "pc",    // sub-tab "Back to Stream" returns to
   pc: null,          // last answer of pc_stream_detect (pcstream::PcStatus), null = not checked
   detecting: false,
   thor: null,        // last answer of pc_stream_thor_apps (pcstream::thor::ThorApps)
@@ -23,13 +28,42 @@ const PCS = {
 
 document.querySelectorAll(".subtab").forEach((button) => (button.onclick = () => showStreamSub(button.dataset.sub)));
 
-/** Switches the Stream page between "mirror" (scrcpy) and "pc" (Sunshine + Moonlight). */
+/** Switches the Stream page between "mirror" (scrcpy), "pc" (Sunshine + Moonlight) and "help". */
 function showStreamSub(sub) {
+  if (sub === "help" && PCS.sub !== "help") PCS.helpFrom = PCS.sub;
   PCS.sub = sub;
   document.querySelectorAll(".subtab").forEach((button) => button.classList.toggle("active", button.dataset.sub === sub));
   document.querySelectorAll(".subpage").forEach((page) => page.classList.toggle("active", page.id === "stream-sub-" + sub));
-  if (sub === "pc" && !PCS.pc && !PCS.detecting) pcRefresh();
+  $("#stream-nav").classList.toggle("hidden", sub === "help");
+  if (sub !== "mirror" && !PCS.pc && !PCS.detecting) pcRefresh();
 }
+
+/** Opens the Help page, optionally with one section (a <details> id) opened and scrolled to. */
+function openHelp(sectionId) {
+  showStreamSub("help");
+  const section = sectionId && document.getElementById(sectionId);
+  if (section) {
+    section.open = true;
+    section.scrollIntoView({ block: "start" });
+  } else {
+    $("#page-stream").scrollTop = 0;
+  }
+}
+
+$("#stream-help").onclick = () => openHelp();
+$("#help-back").onclick = () => showStreamSub(PCS.helpFrom === "help" ? "pc" : PCS.helpFrom);
+// Buttons with data-help="<section id>" (status chips, "set up the login" hints) open that Help section.
+$("#page-stream").addEventListener("click", (e) => {
+  const button = e.target.closest("[data-help]");
+  if (button) openHelp(button.dataset.help);
+});
+
+// "Pair Moonlight" shows the pairing box (PIN, device name, Pair) inside the Thor app card.
+$("#pc-pair-toggle").onclick = () => {
+  const open = $("#pc-pair").classList.toggle("hidden") === false;
+  $("#pc-pair-toggle").setAttribute("aria-expanded", String(open));
+  if (open) setTimeout(() => { const pin = $("#pc-pin"); if (pin && !pin.disabled) pin.focus(); }, 0);
+};
 
 $("#pc-refresh").onclick = () => pcRefresh();
 
@@ -67,6 +101,7 @@ async function pcDetect() {
   PCS.detecting = true;
   $("#pc-refresh").disabled = true;
   pcFill("#pc-sunshine", `<span class="dim"><span class="spin"></span> Checking …</span>`);
+  renderChips();
   try {
     PCS.pc = await invoke("pc_stream_detect");
   } catch (e) {
@@ -76,11 +111,52 @@ async function pcDetect() {
   } finally {
     PCS.detecting = false;
     $("#pc-refresh").disabled = false;
+    renderChips();
   }
   renderSunshine();
   renderAddresses();
   renderPairing();
   renderGames();
+  renderPcState();
+}
+
+// ---------------------------------------------------------------- Status chips and streaming state
+
+/** One status chip; kind = "ok" | "warn" | "bad" | "" (unknown). Clicking opens its Help section. */
+const pcChip = (text, kind, helpId) =>
+  `<button type="button" class="chip ${kind}" data-help="${helpId}" title="Details in Help"><span class="chip-dot"></span>${esc(text)}</button>`;
+
+/** The chips above "Play on Thor": Sunshine, Tailscale on this PC, Moonlight on the Thor (real state, as checked). */
+function renderChips() {
+  const chips = [];
+  const pc = PCS.pc;
+  if (!pc) chips.push(pcChip(PCS.detecting ? "Checking Sunshine …" : "Sunshine not checked", "", "help-sunshine"));
+  else if (pc.sunshine.server) chips.push(pcChip("Sunshine is running", "ok", "help-sunshine"));
+  else if (pc.sunshine.executable || pc.sunshine.service.state !== "not_installed") chips.push(pcChip("Sunshine is not answering", "warn", "help-sunshine"));
+  else chips.push(pcChip("Sunshine not found", "bad", "help-sunshine"));
+
+  if (pc) {
+    const ts = pc.addresses.tailscale;
+    chips.push(ts.running && ts.ipv4 ? pcChip("Tailscale connected", "ok", "help-addresses") : pcChip("Tailscale not connected", "", "help-addresses"));
+  }
+
+  const thor = PCS.thor;
+  if (!thor) chips.push(pcChip("Checking the Thor …", "", "help-thor"));
+  else if (!thor.connected) chips.push(pcChip("Thor not connected", "warn", "help-thor"));
+  else if (thor.moonlight) chips.push(pcChip("Moonlight installed on the Thor", "ok", "help-thor"));
+  else chips.push(pcChip("Moonlight not installed on the Thor", "bad", "help-thor"));
+  $("#pc-chips").innerHTML = chips.join("");
+}
+
+/** Mascot next to the cards: waiting, or busy while Sunshine says something is streaming. */
+function renderPcState() {
+  const server = PCS.pc && PCS.pc.sunshine.server;
+  const streaming = !!(server && (server.busy || server.current_game));
+  $("#pc-state-img").src = `assets/mascot/thorbro-${streaming ? "busy" : "wait"}.svg`;
+  $("#pc-state-text").textContent = streaming
+    ? "PC is streaming. Moonlight will ask whether to quit the running app."
+    : "Nothing is streaming right now.";
+  $("#pc-state").classList.toggle("streaming", streaming);
 }
 
 /** Text and badge kind for the service state (pcstream::sunshine::ServiceState). */
@@ -148,6 +224,7 @@ function renderAddresses() {
     html += pcRow("Tailscale", `<span class="dim">${esc(ts.note || "not available")}</span>`);
     if (!ts.cli_found) html += pcLinks([["tailscale_download", "Get Tailscale"]]);
   }
+  html += addressAdvice();
   pcFill("#pc-addresses", html);
 }
 
@@ -161,10 +238,12 @@ async function pcThorApps() {
   } catch (e) {
     PCS.thor = null;
     pcFill("#pc-thor", `<span class="hint-warn">Couldn't check: ${esc(e)}</span>`);
+    renderChips();
     return;
   }
   renderThorApps();
   renderGames();
+  renderChips();
 }
 
 function renderThorApps() {
@@ -369,16 +448,16 @@ Moonlight keeps one entry per PC (by its host ID) and stores a LAN address and a
   return html;
 }
 
+/** "Open Help" button for a hint; section = id of a Help <details>. */
+const helpLink = (label, section) => `<button type="button" class="link-btn" data-help="${section}">${esc(label)}</button>`;
+
+/** The pairing box of the Thor app card: waiting devices, PIN, device name, Pair. Steps and addresses are in Help. */
 function renderPairing() {
-  let html = `<div class="pc-hint">Pairing always starts in Moonlight on the Thor:
-1. Open Moonlight on the Thor and tap this PC (see the addresses below if it isn't listed).
-2. Moonlight shows a 4-digit PIN.
-3. Type that PIN here and click Pair. ThorBro hands it to Sunshine.</div>`;
-  html += addressAdvice();
+  let html = `<div class="pc-hint">Tap this PC in Moonlight on the Thor, then type the PIN it shows. ${helpLink("How pairing works", "help-pair")}</div>`;
 
   const login = PCS.login;
   if (!login || login.state !== "ok") {
-    html += `<div class="pc-hint warn">Save a working Sunshine login first (card "Sunshine login").</div>`;
+    html += `<div class="pc-hint warn">Save a working Sunshine login first (Help, Sunshine on this PC). ${helpLink("Set up the login", "help-sunshine")}</div>`;
     pcFill("#pc-pair", html);
     return;
   }
@@ -465,7 +544,7 @@ function playBlocker() {
   return "";
 }
 
-/** The experimental display picker; ids come from the screen detection of the mirror tab. */
+/** The experimental display picker; ids come from the scrcpy screen detection (stream.js). */
 function displayPicker() {
   const displays = (typeof STREAM !== "undefined" && STREAM.displays) || [];
   const options = [`<option value="">Moonlight's default</option>`].concat(displays.map((d) =>
@@ -478,20 +557,18 @@ function displayPicker() {
     </details>`;
 }
 
+/** The "Play on Thor" card: one row per Sunshine app. Picker and Moonlight hints go to Help (renderGamesHelp). */
 function renderGames() {
   const login = PCS.login;
   let html = "";
   if (!login || login.state !== "ok") {
-    html += `<div class="pc-hint warn">The game list comes from Sunshine; save a working Sunshine login first.</div>`;
+    html += `<div class="pc-hint warn">The game list comes from Sunshine; save a working Sunshine login first. ${helpLink("Set up the login", "help-sunshine")}</div>`;
     pcFill("#pc-games", html);
     return;
   }
+  renderGamesHelp();
   const blocker = playBlocker();
   if (blocker) html += `<div class="pc-hint warn">${esc(blocker)}</div>`;
-  const server = PCS.pc && PCS.pc.sunshine.server;
-  if (server && (server.busy || server.current_game)) {
-    html += `<div class="pc-hint">${pcBadge("PC is streaming", "warn")} Something is already running on the PC. Moonlight will ask whether to quit it.</div>`;
-  }
   if (PCS.apps === null) {
     html += `<div class="dim"><span class="spin"></span> Loading games …</div>`;
   } else if (PCS.appsError) {
@@ -503,22 +580,28 @@ function renderGames() {
       `<div class="pc-app"><span class="name" title="${esc(name)}">${esc(name)}</span>
         <button class="primary" data-play="${index}" ${blocker ? "disabled" : ""}>Play on Thor</button></div>`).join("")}</div>`;
   }
-  html += displayPicker();
+  const body = pcFill("#pc-games", html);
+  body.querySelectorAll("[data-play]").forEach((button) => (button.onclick = () => pcPlay(PCS.apps[Number(button.dataset.play)], button)));
+}
+
+/** Help section "Starting games": the experimental screen picker and what Moonlight may show. */
+function renderGamesHelp() {
+  let html = displayPicker();
   html += `<details class="pc-dialogs"><summary>What Moonlight may show on the Thor</summary>
-      <div class="pc-hint">• <b>PC not found</b>: Moonlight doesn't know this PC yet. Add it in Moonlight (see the addresses above) and pair it.
-• <b>PC not paired</b>: pair first (card "Pair Moonlight").
+      <div class="pc-hint">• <b>PC not found</b>: Moonlight doesn't know this PC yet. Add it in Moonlight (see Addresses of this PC) and pair it.
+• <b>PC not paired</b>: pair first (Stream, Pair Moonlight).
 • <b>Computer is offline</b>: the Thor can't reach the PC. Same Wi-Fi? Tailscale on both? Firewall?
 • <b>Provided App is not valid</b>: Moonlight only knows the games from the last time you opened this PC's game list in Moonlight. Open it once on the Thor, then try again.
 • <b>Are you sure you want to quit the running app?</b>: another game is running on the PC. Confirm on the Thor to switch.</div>
     </details>`;
-  const body = pcFill("#pc-games", html);
-  body.querySelectorAll("[data-play]").forEach((button) => (button.onclick = () => pcPlay(PCS.apps[Number(button.dataset.play)], button)));
+  const body = pcFill("#pc-games-help", html);
   $("#pc-display", body).onchange = (e) => { PCS.display = e.target.value; };
   $("#pc-display-detect", body).onclick = async () => {
     if (!S.connected) return toast("Thor is not connected", true);
-    await detectDisplays(); // stream.js: the same scrcpy detection as the mirror tab
-    renderGames();
-    $("#pc-games .pc-display").open = true;
+    await detectDisplays(); // stream.js: scrcpy --list-displays
+    if (STREAM.detectError) toast(`Couldn't detect the screens: ${STREAM.detectError}`, true);
+    renderGamesHelp();
+    $("#pc-games-help .pc-display").open = true;
   };
 }
 
@@ -540,8 +623,8 @@ async function pcPlay(appName, button) {
 
 // ---------------------------------------------------------------- Step 6: stream profile, step 7: checklist links
 
-// Static link buttons (checklist card); dynamic ones are wired in pcFill.
-document.querySelectorAll("#stream-sub-pc .card > .pc-links [data-link]").forEach((button) =>
+// Static link buttons (Help, low-latency checklist); dynamic ones are wired in pcFill.
+document.querySelectorAll("#help-latency [data-link]").forEach((button) =>
   (button.onclick = () => call("pc_stream_open_link", { id: button.dataset.link }).catch(() => {})));
 
 $("#pc-profile-show").onclick = async () => {

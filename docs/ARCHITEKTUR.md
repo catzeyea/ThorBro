@@ -64,12 +64,14 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `js/device.js` | Tabs und Geräteerkennung (`pollDevice`). |
 | `js/files.js` | Dateimanager-Tab, Teil 1: Orte, Listing-Cache, virtualisierte Liste, Auswahl, Verlauf, Tastatur. |
 | `js/files-actions.js` | Dateimanager-Tab, Teil 2: Ausschneiden/Kopieren/Einfügen, Umbenennen in der Zeile, Verschieben, Löschen, Kontextmenü, Ziehen von Zeilen (in Ordner oder raus auf den PC). |
-| `js/transfer.js` | Senden an den Thor: Drag & Drop, Einsortier-Dialog, Kopier-Warteschlange, Fortschrittsbalken. |
+| `js/transfer.js` | Senden an den Thor: Drag & Drop, Einsortier-Dialog, Kopier-Warteschlange, Fortschrittsleiste (zeigt die „transfer“-Events, auch „file X of Y“). |
 | `js/saves.js` | Spielkarten, Kartenmenü, Sync-Ablauf. |
 | `js/saves-setup.js` | Spiel hinzufügen (Suche, KI-Vorschlag, Prüfen). |
 | `js/saves-import.js` | Spielstand importieren. |
-| `js/stream.js` | Stream-Tab, Unter-Tab „Mirror Thor screens“: eine Karte pro erkanntem Display, „Stream both“ / „Stop all“, Schnellstart. |
-| `js/pcstream.js` | Stream-Tab, Unter-Tab „Stream PC games to your Thor“: Sunshine-, Adress- und Thor-Prüfung, Sunshine-Login, Pairing, Spieleliste mit „Play on Thor“, Checkliste, Stream-Profil mit „Send to Thor app“. |
+| `js/stream.js` | Stream-Tab, Unter-Tab „Mirror Thor screens“: drei Kacheln (beide / oben / unten, feste IDs 0 und 4), Stopp, Fehler; die scrcpy-Display-Erkennung für die Bildschirmauswahl. |
+| `js/pcstream.js` | Stream-Tab, Unter-Tab „Stream PC games“ (Status-Chips, „Play on Thor“, „Send to Thor app“, Pairing) und die Help-Seite (Sunshine und Login, Adressen, Apps auf dem Thor, Bildschirmauswahl, Checkliste, Stream-Profil). |
+| `js/pins.js` | Angeheftete Thor-Ordner: Pin-Knopf in der Pfadleiste (Strg+D), Karte „pinned“ in der Ortsleiste, Zeile „pinned“ im Start-Tab, Zustand „not found“ (`pins`, `add_pin`, `remove_pin`, `pins_found`; gespeichert in `settings.json`). |
+| `js/start.js` | Start-Tab (Ablagefläche, Bibliotheks-Kacheln), die Ortsleiste des Dateimanagers, sein „More“-Menü und die Tastenkürzel-Liste. |
 | `js/main.js` | Start: erste Geräteabfrage und Timer. |
 
 Die JS-Dateien sind klassische `<script>`-Dateien ohne `type="module"`. Sie teilen sich einen

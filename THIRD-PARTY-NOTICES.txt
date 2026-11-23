@@ -3,6 +3,13 @@ ThorBro - Third-party notices
 
 ThorBro itself is licensed under the MIT License, see the file LICENSE.
 
+All packages: the user interface uses the font JetBrains Mono 2.304
+(Copyright 2020 The JetBrains Mono Project Authors), included unchanged as
+WOFF2 files in ui/assets/fonts/ and embedded in the program. It is licensed
+under the SIL Open Font License 1.1; the full text is in
+ui/assets/fonts/OFL.txt, which is embedded alongside the font.
+  https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304
+
 The Windows package of ThorBro (installer and portable ZIP) also contains the
 third-party programs and libraries listed below, in the folder "tools".
 All of them are included unchanged from the scrcpy v5.0.1 release for

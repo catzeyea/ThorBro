@@ -308,21 +308,25 @@ async function deleteSelected() {
   }
 }
 
-/** "Copy to PC": copies the selected entries to ~/Downloads/thor, one after the other. */
+/** "Copy to PC": copies the selected entries to ~/Downloads/thor, one after the other. Progress on the strip (transfer.js). */
 async function pullSelected() {
   const entries = selectedOrHint();
   if (!entries.length) return;
   const dir = S.cwd;
   let dest = null;
-  for (const entry of entries) {
-    toast(`Copying ${entry.name} to the PC …`);
+  for (const [i, entry] of entries.entries()) {
+    pullProgress(i + 1, entries.length);
     try {
-      dest = await call("pull", { path: joinPath(dir, entry.name) }); // → commands::pull → files::pull
+      // → commands::pull → files::pull ("transfer" progress events while it runs)
+      dest = await call("pull", { path: joinPath(dir, entry.name) });
     } catch (_) {
+      pullFinished(null);
       return; // shown as toast; stop instead of piling up errors
     }
   }
-  toast(`Copied ${itemsLabel(entries)} to ${dest}`);
+  const text = `Copied ${itemsLabel(entries)} to ${dest}`;
+  pullFinished(text);
+  toast(text);
 }
 
 /** "Extract": unpacks the selected archive on the Thor into the open folder (via the copy queue). */

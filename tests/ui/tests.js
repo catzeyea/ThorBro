@@ -1,4 +1,4 @@
-// UI tests for the file manager and the stream tab, evaluated inside the page (real index.html + scripts, fake Tauri
+// UI tests for the file manager, the transfer strip and the stream tab, evaluated inside the page (real index.html + scripts, fake Tauri
 // bridge from stub.js). Returns a JSON string: [{ name, ok, info }].
 (async () => {
   const H = window.HARNESS;
@@ -24,6 +24,7 @@
     check("initial listing shown", await until(() => S.cwd === "/sdcard" && FM.status === "ready" && S.shown.length === 6), JSON.stringify(names()));
     check("folders first, natural name order", names().join(",") === "big,Download,Music,a.txt,B.iso,c.zip", names().join(","));
     check("remember_dir called for shown folder", callsOf("remember_dir").some((c) => c.args.path === "/sdcard"));
+    check("transfer strip hidden while nothing runs", $("#progress").classList.contains("hidden"));
 
     // ---- virtualization
     go("/sdcard/big");
@@ -32,7 +33,7 @@
     const domRows = rowEls().length;
     check("virtualized: only visible rows in DOM", domRows > 0 && domRows < 80, `${domRows} rows in DOM for 5000 entries`);
     const list = $("#filelist");
-    list.scrollTop = 30 * 2500;
+    list.scrollTop = ROW_HEIGHT_PX * 2500;
     list.dispatchEvent(new Event("scroll"));
     await sleep(60);
     check("scrolling renders the rows at that position", rowEls().some((r) => r._entry.name.startsWith("file25")), rowEls().slice(0, 2).map((r) => r._entry.name).join(","));
@@ -56,12 +57,12 @@
     check("back to /sdcard is instant from cache (synchronous)", S.cwd === "/sdcard" && S.shown.length === 6 && FM.status === "ready", `${S.cwd} ${S.shown.length}`);
     goForward();
     check("forward to /sdcard/big instant from cache", S.cwd === "/sdcard/big" && S.shown.length === 5000);
-    list.scrollTop = 30 * 1000; list.dispatchEvent(new Event("scroll")); await sleep(40);
+    list.scrollTop = ROW_HEIGHT_PX * 1000; list.dispatchEvent(new Event("scroll")); await sleep(40);
     selectOnly("file1005.bin");
     go("/sdcard");
     goBack();
     await sleep(60);
-    check("back restores scroll position and selection", Math.abs(list.scrollTop - 30000) < 2 && FM.picked.has("file1005.bin") && !!rowByName("file1005.bin"), `${list.scrollTop} ${[...FM.picked]}`);
+    check("back restores scroll position and selection", Math.abs(list.scrollTop - ROW_HEIGHT_PX * 1000) < 2 && FM.picked.has("file1005.bin") && !!rowByName("file1005.bin"), `${list.scrollTop} ${[...FM.picked]}`);
     goUp();
     check("up selects the folder we came from", await until(() => S.cwd === "/sdcard" && FM.picked.has("big")), [...FM.picked]);
 
@@ -110,10 +111,10 @@
     // ---- rubber band on the empty area below the rows
     key("Escape");
     const lbox = list.getBoundingClientRect();
-    const yBelow = lbox.top + 6 * 30 + 20; // in the bottom padding
+    const yBelow = lbox.top + 6 * ROW_HEIGHT_PX + 20; // in the bottom padding
     list.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: lbox.left + 200, clientY: yBelow }));
-    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: lbox.left + 220, clientY: lbox.top + 35 }));
-    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: lbox.left + 220, clientY: lbox.top + 35 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: lbox.left + 220, clientY: lbox.top + ROW_HEIGHT_PX + 5 }));
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: lbox.left + 220, clientY: lbox.top + ROW_HEIGHT_PX + 5 }));
     check("rubber band selects covered rows", [...FM.picked].sort().join() === ["Download", "Music", "a.txt", "B.iso", "c.zip"].sort().join(), [...FM.picked]);
 
     // ---- sorting
@@ -234,7 +235,7 @@
     check("row context menu has the actions", ["Open", "Cut", "Copy", "Paste into folder", "Rename …", "Delete"].every((x) => items.includes(x)), items.join("|"));
     key("Escape");
     check("Escape closes the menu", !document.querySelector(".ctx"));
-    list.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 100, clientY: lbox.top + 7 * 30 + 10 }));
+    list.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 100, clientY: lbox.top + 7 * ROW_HEIGHT_PX + 10 }));
     const items2 = [...document.querySelectorAll(".ctx .ctx-item span")].map((s) => s.textContent);
     check("background menu", items2.includes("New folder") && items2.includes("Refresh"), items2.join("|"));
     [...document.querySelectorAll(".ctx .ctx-item")].find((b) => b.textContent.startsWith("Refresh")).click();
@@ -278,59 +279,109 @@
     check("Alt+Left goes back", S.cwd === "/sdcard/Download");
     key("ArrowRight", { altKey: true });
     check("Alt+Right goes forward", S.cwd === "/sdcard");
-    // ---- stream tab: detected displays, per-display start/stop, "Stream both", failures
-    const cards = () => [...document.querySelectorAll(".stream-card")];
-    const card = (id) => document.querySelector(`.stream-card[data-id="${id}"]`);
+    // ---- shortcuts: F5, and none of them fire while typing in a text field
+    list.focus();
+    const listsBefore = callsOf("list_dir").length;
+    key("F5");
+    check("F5 refreshes the open folder", await until(() => callsOf("list_dir").length > listsBefore));
+    const fileA = S.shown.find((e) => !e.dir).name;
+    click(fileA);
+    key("F2");
+    const typing = editor();
+    const pickedWhileTyping = [...FM.picked].join();
+    const clipWhileTyping = FM.clip;
+    const pinCallsWhileTyping = callsOf("add_pin").length + callsOf("remove_pin").length;
+    for (const [k, opts] of [["Delete", {}], ["a", { ctrlKey: true }], ["Backspace", {}], ["x", { ctrlKey: true }], ["d", { ctrlKey: true }]]) {
+      typing.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...opts }));
+    }
+    await sleep(30);
+    check("shortcuts don't fire while typing in an input (incl. Ctrl+D pin)", !!typing && !S.modalOpen && [...FM.picked].join() === pickedWhileTyping && S.cwd === "/sdcard" && FM.clip === clipWhileTyping &&
+      callsOf("add_pin").length + callsOf("remove_pin").length === pinCallsWhileTyping && !PINS.list.length,
+      `${S.modalOpen} ${[...FM.picked]} ${S.cwd} ${JSON.stringify(FM.clip && FM.clip.mode)}`);
+    typing.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await sleep(20);
+
+    // ---- toolbar: Rename only in "More", "?" shortcuts panel
+    check("toolbar: Rename moved into More", !!$("#more-pop #btn-rename") && ![...document.querySelectorAll(".actions > button")].some((b) => b.id === "btn-rename"));
+    const keysPanel = $("#keys-panel");
+    check("shortcuts panel hidden at first", keysPanel.classList.contains("hidden"));
+    $("#keys").dispatchEvent(new MouseEvent("mouseenter"));
+    check("shortcuts panel opens on hover", !keysPanel.classList.contains("hidden") && $("#btn-keys").getAttribute("aria-expanded") === "true");
+    $("#keys").dispatchEvent(new MouseEvent("mouseleave"));
+    check("shortcuts panel closes when the mouse leaves", keysPanel.classList.contains("hidden"));
+    // Headless Firefox doesn't fire focus events for .focus() in an unfocused window, so send them.
+    $("#btn-keys").dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    check("shortcuts panel opens on keyboard focus", !keysPanel.classList.contains("hidden"));
+    $("#btn-keys").dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: list }));
+    check("shortcuts panel closes when focus leaves", keysPanel.classList.contains("hidden"));
+    click(fileA);
+    $("#btn-keys").click();
+    $("#keys").dispatchEvent(new MouseEvent("mouseleave"));
+    check("click keeps the panel open", !keysPanel.classList.contains("hidden"));
+    $("#btn-keys").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    check("Escape closes the panel and leaves the selection alone", keysPanel.classList.contains("hidden") && FM.picked.has(fileA));
+    const listedKeys = [...keysPanel.querySelectorAll("dt")].map((d) => d.textContent);
+    check("panel lists only shortcuts the file list handles (each one is tested in this file)",
+      listedKeys.join("|") === ["Open", "Up one folder", "Back / forward", "Refresh", "Select all", "Copy", "Cut", "Paste here", "Rename", "Delete", "New folder", "Pin / unpin folder"].join("|"),
+      listedKeys.join("|"));
+
+    // ---- transfer strip: real "transfer" events (files::Progress)
+    const strip = $("#progress");
+    const progress = (p) => H.emit("transfer", { busy: true, text: "", detail: "", fraction: 0, dests: [], error: null, cancellable: false, cancelled: false, index: 0, count: 0, ...p });
+    check("a finished batch hides the strip by itself", await until(() => strip.classList.contains("hidden"), 7000));
+    progress({ text: "Copying Celeste.nsp", detail: "1.0 GB of 1.6 GB · 40 MB/s · 1 more waiting", fraction: 0.62, cancellable: true, index: 2, count: 3 });
+    check("strip shows name, file X of Y, percent, bar and Cancel",
+      !strip.classList.contains("hidden") && $("#p-text").textContent === "Copying Celeste.nsp" && $("#p-meta").textContent === "file 2 of 3 · 62%" &&
+      $("#p-bar").style.width === "62%" && !$("#p-cancel").classList.contains("hidden") && $("#p-mascot").src.endsWith("thorbro-busy.svg"),
+      `${$("#p-meta").textContent} ${$("#p-bar").style.width}`);
+    progress({ text: "Extracting x.zip", fraction: 0, cancellable: true, index: 3, count: 3 });
+    check("unknown fraction -> animated bar, no percent", $("#p-bar").parentElement.classList.contains("indet") && $("#p-meta").textContent === "file 3 of 3");
+    H.emit("transfer", { busy: false, text: "Done: 3 copied to /sdcard", detail: "", fraction: 1, dests: [], error: null, cancellable: false, cancelled: false, index: 0, count: 0 });
+    await sleep(20);
+    check("finished batch: done state, no Cancel", strip.classList.contains("done") && $("#p-cancel").classList.contains("hidden") && $("#p-mascot").src.endsWith("thorbro-done.svg"));
+    hideTransfer();
+    // "Copy to PC": the pull command now emits progress (fake: one event at 50 %); position counted by the UI.
+    H.latency.pull = 150;
+    selectOnly(S.shown[0].name); toggleSelect(S.shown[1].name);
+    $("#btn-pull").click();
+    check("Copy to PC shows file 1 of 2 on the strip", await until(() => $("#p-meta").textContent === "file 1 of 2 · 50%"), $("#p-meta").textContent);
+    check("Copy to PC then shows file 2 of 2", await until(() => $("#p-meta").textContent === "file 2 of 2 · 50%"), $("#p-meta").textContent);
+    check("Copy to PC ends with a done state", await until(() => strip.classList.contains("done") && $("#p-text").textContent.includes("Copied 2 items")), $("#p-text").textContent);
+    H.latency.pull = undefined;
+    hideTransfer();
+
+    // ---- stream tab, "Mirror Thor screens": three quick-start tiles, Stop, failures
+    const tile = (which) => document.querySelector(`.stream-btn[data-which="${which}"]`);
     showTab("stream");
-    check("stream: displays detected on opening the tab", await until(() => cards().length === 2), cards().length);
-    check("stream: labels and sizes shown", card(4).textContent.includes("Bottom screen") && card(4).textContent.includes("1240×1080"), card(4).textContent);
-    check("stream: Stream both enabled, no hint", !$("#stream-both").disabled && $("#stream-note").classList.contains("hidden"));
-    card(4).querySelector('[data-opt="bitrate_mbps"]').value = "8";
-    card(4).querySelector('[data-opt="always_on_top"]').checked = true;
-    $("#stream-both").click();
-    await until(() => card(0).classList.contains("running") && card(4).classList.contains("running"));
-    const started = callsOf("stream_start_displays").pop();
-    check("stream: Stream both starts both displays with their card options",
-      started && started.args.displays.map((d) => d.id).join() === "0,4" &&
-      started.args.displays[1].options.bitrate_mbps === 8 && started.args.displays[1].options.always_on_top === true &&
-      started.args.displays[0].options.bitrate_mbps === 16, JSON.stringify(started && started.args));
-    check("stream: both cards running, options locked, Stop all visible",
-      card(0).classList.contains("running") && card(4).querySelector("[data-opt]").disabled && !$("#stream-stop").classList.contains("hidden"));
-    card(4).querySelector(".stream-toggle").click();
-    await until(() => !card(4).classList.contains("running"));
-    check("stream: Stop on one card stops only that display",
-      callsOf("stream_stop_display").pop()?.args.display === 4 && card(0).classList.contains("running") && !card(4).classList.contains("running"));
+    await sleep(50);
+    check("mirror: three tiles, nothing running, Stop hidden, waiting mascot",
+      document.querySelectorAll(".stream-btn").length === 3 && $("#stream-stop").classList.contains("hidden") &&
+      $("#stream-status").textContent.includes("Nothing running") && $("#mirror-state-img").src.endsWith("thorbro-wait.svg"));
+    check("mirror: detection cards, Stream both and per-screen options are gone, nothing detected",
+      !$("#stream-detect") && !$("#stream-both") && !document.querySelector(".stream-card, [data-opt]") && !callsOf("stream_displays").length);
+    tile("top").click();
+    await until(() => tile("top").classList.contains("running"));
+    check("mirror: Top only starts the top screen, Stop visible, busy mascot",
+      callsOf("stream_start").pop()?.args.which === "top" && !$("#stream-stop").classList.contains("hidden") &&
+      $("#stream-status").textContent.includes("Top screen") && $("#mirror-state-img").src.endsWith("thorbro-busy.svg"), $("#stream-status").textContent);
     H.stream.failStart[4] = "Display 4 not found";
     const toastsBefore = document.querySelectorAll(".toast.err").length;
-    card(4).querySelector(".stream-toggle").click();
-    await until(() => card(4).classList.contains("failed"));
-    check("stream: a failed start is shown on its card and as a toast, the other keeps running",
-      card(4).querySelector(".stream-error").textContent === "Display 4 not found" && card(0).classList.contains("running") &&
-      document.querySelectorAll(".toast.err").length === toastsBefore + 1);
+    tile("bottom").click();
+    await until(() => !$("#stream-error").classList.contains("hidden"));
+    check("mirror: a failed start is shown under the status and as a toast, the other keeps running",
+      $("#stream-error").textContent === "Bottom screen: Display 4 not found" && tile("top").classList.contains("running") &&
+      document.querySelectorAll(".toast.err").length === toastsBefore + 1, $("#stream-error").textContent);
     await streamStatus();
-    check("stream: the same failure is not toasted twice", document.querySelectorAll(".toast.err").length === toastsBefore + 1);
+    check("mirror: the same failure is not toasted twice", document.querySelectorAll(".toast.err").length === toastsBefore + 1);
     delete H.stream.failStart[4];
+    tile("both").click();
+    await until(() => tile("both").classList.contains("running"));
+    check("mirror: Both screens starts both, the failure goes away", callsOf("stream_start").pop()?.args.which === "both" && $("#stream-error").classList.contains("hidden"));
     $("#stream-stop").click();
-    await until(() => !card(0).classList.contains("running"));
-    check("stream: Stop all stops everything and clears the failure",
-      callsOf("stream_stop").length === 1 && !card(4).classList.contains("failed") && $("#stream-stop").classList.contains("hidden"));
-    H.stream.displays = H.stream.displays.slice(0, 1);
-    $("#stream-detect").click();
-    await until(() => cards().length === 1);
-    check("stream: only one display -> clear hint, Stream both disabled",
-      !$("#stream-note").classList.contains("hidden") && $("#stream-note").textContent.includes("only one display") && $("#stream-both").disabled,
-      $("#stream-note").textContent);
-    H.fail.stream_displays = "scrcpy not found – please install scrcpy (see README)";
-    $("#stream-detect").click();
-    await until(() => $("#stream-note").textContent.includes("Couldn't detect"));
-    check("stream: detection error shown in the hint", $("#stream-note").textContent.includes("scrcpy not found") && cards().length === 0);
-    delete H.fail.stream_displays;
-    document.querySelector('.stream-btn[data-which="top"]').click();
-    await until(() => document.querySelector('.stream-btn[data-which="top"]').classList.contains("running"));
-    check("stream: quick start still works", callsOf("stream_start").pop()?.args.which === "top");
-    $("#stream-stop").click();
+    await until(() => $("#stream-stop").classList.contains("hidden"));
+    check("mirror: Stop stops everything", callsOf("stream_stop").length === 1 && !tile("both").classList.contains("running") && $("#stream-status").textContent.includes("Nothing running"));
 
-    // ---- stream tab, sub-tab "Stream PC games to your Thor"
+    // ---- stream tab, sub-tab "Stream PC games" and the Help page
     const pcText = (id) => document.querySelector(`#${id} .pc-body`).textContent;
     check("pc: mirror sub-tab is the default", $("#stream-sub-mirror").classList.contains("active") && !$("#stream-sub-pc").classList.contains("active"));
     showStreamSub("pc");
@@ -338,6 +389,17 @@
     check("pc: detection, Thor apps and login are checked on opening",
       await until(() => callsOf("pc_stream_detect").length && callsOf("pc_stream_thor_apps").length && callsOf("pc_stream_login_status").length && PCS.login));
     await until(() => pcText("pc-sunshine").includes("Sunshine is running"));
+    const chips = () => [...document.querySelectorAll("#pc-chips .chip")].map((c) => `${c.className}:${c.textContent}`);
+    check("pc: status chips show the real state",
+      await until(() => chips().join("|") === "chip ok:Sunshine is running|chip :Tailscale not connected|chip bad:Moonlight not installed on the Thor"), chips().join("|"));
+    document.querySelector('#pc-chips [data-help="help-thor"]').click();
+    check("pc: a chip opens its Help section, the sub-tabs hide",
+      $("#stream-sub-help").classList.contains("active") && $("#help-thor").open && $("#stream-nav").classList.contains("hidden"));
+    $("#help-back").click();
+    check("pc: Back to Stream returns to Stream PC games", $("#stream-sub-pc").classList.contains("active") && !$("#stream-nav").classList.contains("hidden"));
+    check("pc: pairing box closed until Pair Moonlight is clicked", $("#pc-pair").classList.contains("hidden"));
+    $("#pc-pair-toggle").click();
+    check("pc: Pair Moonlight opens the pairing box", !$("#pc-pair").classList.contains("hidden") && $("#pc-pair-toggle").getAttribute("aria-expanded") === "true");
     check("pc: Sunshine status with host ID", pcText("pc-sunshine").includes("0123ABCD-4567-89EF-0123-456789ABCDEF") && pcText("pc-sunshine").includes("idle"), pcText("pc-sunshine"));
     check("pc: LAN address recommended, docker marked virtual, Tailscale missing is only a note",
       pcText("pc-addresses").includes("192.168.1.20") && pcText("pc-addresses").includes("use this") && pcText("pc-addresses").includes("docker0, virtual") &&
@@ -381,10 +443,18 @@
     playButtons()[0].click();
     await until(() => callsOf("pc_stream_play").length === 2);
     check("pc: experimental display id from the screen detection is passed", callsOf("pc_stream_play").pop()?.args.display === 4);
-    check("pc: Moonlight dialogs explained", pcText("pc-games").includes("PC not paired") && pcText("pc-games").includes("Provided App is not valid"));
+    check("pc: Moonlight dialogs explained in Help", pcText("pc-games-help").includes("PC not paired") && pcText("pc-games-help").includes("Provided App is not valid"));
+    H.pc.status.sunshine.server.busy = true;
+    await pcDetect();
+    check("pc: PC streaming -> note and busy mascot", $("#pc-state-text").textContent.includes("PC is streaming") && $("#pc-state-img").src.endsWith("thorbro-busy.svg"));
+    H.pc.status.sunshine.server.busy = false;
+    await pcDetect();
+    check("pc: nothing streaming -> waiting mascot", $("#pc-state-text").textContent === "Nothing is streaming right now." && $("#pc-state-img").src.endsWith("thorbro-wait.svg"));
 
-    check("pc: no device waiting yet -> Pair disabled, address advice shown",
-      pcText("pc-pair").includes("no device waiting") && $("#pc-pair-go").disabled && pcText("pc-pair").includes("192.168.1.20") && pcText("pc-pair").includes("mDNS"), pcText("pc-pair"));
+    check("pc: no device waiting yet -> Pair disabled",
+      pcText("pc-pair").includes("no device waiting") && $("#pc-pair-go").disabled, pcText("pc-pair"));
+    check("pc: address advice moved to Help (Addresses of this PC)",
+      pcText("pc-addresses").includes("192.168.1.20") && pcText("pc-addresses").includes("mDNS") && !pcText("pc-pair").includes("mDNS"), pcText("pc-addresses"));
     H.pc.pairings = { supported: true, pairings: [{ id: "0123456789abcdef0123456789abcdef", name: "Thor", address: "192.168.1.30" }] };
     pcPoll();
     check("pc: a waiting Moonlight appears via polling", await until(() => !$("#pc-pair-go").disabled && pcText("pc-pair").includes("192.168.1.30")));
@@ -456,8 +526,122 @@
     check("pc: Sunshine missing -> install links, Play blocked",
       pcText("pc-sunshine").includes("Sunshine not found") && !!document.querySelector('#pc-sunshine [data-link="sunshine_getting_started"]') && playButtons().every((b) => b.disabled));
     showStreamSub("mirror");
-    check("pc: back to mirroring keeps the scrcpy cards", $("#stream-sub-mirror").classList.contains("active") && cards().length > 0);
+    check("pc: back to mirroring shows the three tiles", $("#stream-sub-mirror").classList.contains("active") && document.querySelectorAll(".stream-btn").length === 3);
     showTab("files");
+
+    // ---- pinned folders (DESIGN-UPDATE-3): pin/unpin, order, missing folders, cap
+    for (const p of ["/sdcard/pinA", "/sdcard/pinB", "/sdcard/pinC"]) H.fs.set(p, { dir: true, size: 0, mtime: 1700000000 });
+    const sidePins = () => [...document.querySelectorAll("#side-pins .side-pin")];
+    const sidePin = (name) => sidePins().find((r) => r.querySelector(".pin-name").textContent === name);
+    const sidePinNames = () => sidePins().map((r) => r.querySelector(".pin-name").textContent).join(",");
+    const pinChips = () => [...document.querySelectorAll("#start-pin-chips .pin-chip")];
+    const pinBtn = $("#pin");
+    const openAt = async (path) => { go(path); return until(() => S.cwd === path && FM.status === "ready"); };
+    const ctrlD = async (count) => { list.focus(); key("d", { ctrlKey: true }); return until(() => PINS.list.length === count); };
+    const errToasts = () => [...document.querySelectorAll(".toast.err")].map((t) => t.textContent);
+    showTab("files");
+    check("pins: loaded once at start; none yet -> only the hint in the sidebar, no Start row",
+      callsOf("pins").length === 1 && sidePins().length === 0 && !!$(".side-pins .side-hint") && $("#start-pins").classList.contains("hidden"), sidePinNames());
+    await openAt("/sdcard/pinA");
+    check("pins: pin button shows 'not pinned' (outline icon)",
+      pinBtn.getAttribute("aria-label") === "Pin this folder" && pinBtn.getAttribute("aria-pressed") === "false" &&
+      pinBtn.querySelector("svg").getAttribute("fill") === "none" && !pinBtn.disabled);
+    pinBtn.click();
+    await until(() => PINS.list.length === 1);
+    check("pins: pin button pins the open folder as storage + path",
+      JSON.stringify(callsOf("add_pin").pop()?.args) === JSON.stringify({ storage: "/sdcard", path: "/sdcard/pinA" }), JSON.stringify(callsOf("add_pin").pop()?.args));
+    check("pins: pinned state = orange filled icon, label 'Unpin this folder'",
+      pinBtn.getAttribute("aria-label") === "Unpin this folder" && pinBtn.getAttribute("aria-pressed") === "true" &&
+      pinBtn.classList.contains("on") && pinBtn.querySelector("svg").getAttribute("fill") === "currentColor");
+    check("pins: sidebar row (full path as tooltip) and Start chip appear",
+      sidePinNames() === "pinA" && sidePin("pinA").querySelector(".side-item").title === "/sdcard/pinA" &&
+      !$("#start-pins").classList.contains("hidden") && pinChips().length === 1 && !sidePin("pinA").classList.contains("missing"), sidePinNames());
+
+    await openAt("/sdcard/pinC");
+    await ctrlD(2);
+    await openAt("/sdcard/pinB");
+    await ctrlD(3);
+    selectPlace("/storage/1A2B-3C4D");
+    await until(() => S.cwd === "/storage/1A2B-3C4D" && FM.status === "ready");
+    await ctrlD(4);
+    check("pins: Ctrl+D pins the open folder; pin order is kept (not sorted)",
+      sidePinNames() === "pinA,pinC,pinB,SD card (1A2B-3C4D)" && pinChips().map((c) => c.textContent).join(",") === "pinA,pinC,pinB,SD card (1A2B-3C4D)", sidePinNames());
+    check("pins: stored per storage", H.pins.map((p) => p.storage).join() === "/sdcard,/sdcard,/sdcard,/storage/1A2B-3C4D", JSON.stringify(H.pins));
+    await ctrlD(3);
+    check("pins: Ctrl+D in a pinned folder unpins it", !pinOf("/storage/1A2B-3C4D") && pinBtn.getAttribute("aria-pressed") === "false" && sidePinNames() === "pinA,pinC,pinB", sidePinNames());
+
+    sidePin("pinC").querySelector(".pin-x").click();
+    await until(() => PINS.list.length === 2);
+    check("pins: the sidebar 'x' unpins, the others keep their order", sidePinNames() === "pinA,pinB" && H.pins.map((p) => p.path).join() === "/sdcard/pinA,/sdcard/pinB", sidePinNames());
+    check("pins: 'x' has an accessible name", sidePin("pinB").querySelector(".pin-x").getAttribute("aria-label") === "Unpin pinB");
+    const pinRow = sidePin("pinB");
+    const pinBox = pinRow.getBoundingClientRect();
+    pinRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: pinBox.left + 20, clientY: pinBox.top + 10 }));
+    const unpinItem = [...document.querySelectorAll(".ctx .ctx-item")].find((b) => b.textContent.startsWith("Unpin"));
+    check("pins: right-click on a pin offers 'Unpin'", !!unpinItem);
+    unpinItem && unpinItem.click();
+    await until(() => PINS.list.length === 1);
+    check("pins: right-click 'Unpin' unpins", sidePinNames() === "pinA" && !document.querySelector(".ctx"), sidePinNames());
+
+    await openAt("/sdcard");
+    sidePin("pinA").querySelector(".side-item").click();
+    check("pins: clicking a sidebar pin opens the folder", await until(() => S.cwd === "/sdcard/pinA" && S.root === "/sdcard"), S.cwd);
+    await openAt("/sdcard");
+    showTab("start");
+    pinChips()[0].click();
+    check("pins: a Start chip opens Files at that folder", S.tab === "files" && $("#page-files").classList.contains("active") && await until(() => S.cwd === "/sdcard/pinA"), `${S.tab} ${S.cwd}`);
+
+    await openAt("/sdcard/pinB");
+    await ctrlD(2);
+    PINS.list = []; renderPins();
+    await loadPins();
+    check("pins: reloaded from settings in the same order", sidePinNames() === "pinA,pinB", sidePinNames());
+
+    // A pinned folder that is gone: dimmed with "not found", can't be opened, can be unpinned.
+    H.fs.delete("/sdcard/pinB");
+    await openAt("/sdcard");
+    checkPins();
+    // (A background re-list of pinB may start a newer check; wait for whichever lands.)
+    await until(() => sidePin("pinB")?.classList.contains("missing"));
+    const gone = sidePin("pinB");
+    check("pins: missing folder is dimmed with 'not found' (sidebar and Start)",
+      gone.classList.contains("missing") && gone.querySelector(".pin-note")?.textContent === "not found" &&
+      !sidePin("pinA").classList.contains("missing") && pinChips()[1].classList.contains("missing") && !pinChips()[0].classList.contains("missing"),
+      `${sidePinNames()} found=${JSON.stringify([...PINS.found])}`);
+    const errsBefore = errToasts().length;
+    gone.querySelector(".side-item").click();
+    await sleep(30);
+    check("pins: clicking a missing pin explains it and stays put", S.cwd === "/sdcard" && errToasts().length > errsBefore && errToasts().pop().includes("not found"), errToasts().pop());
+    gone.querySelector(".pin-x").click();
+    check("pins: a missing pin can be unpinned", await until(() => sidePinNames() === "pinA"), sidePinNames());
+    // A pinned folder that fails to list is checked again and marked.
+    await openAt("/sdcard/pinC");
+    await ctrlD(2);
+    H.fs.delete("/sdcard/pinC");
+    go("/sdcard"); await sleep(10);
+    clearDirCache();
+    refreshListing("/sdcard/pinC");
+    check("pins: a failed listing of a pinned folder marks it missing", await until(() => sidePin("pinC")?.classList.contains("missing")));
+    await unpin(pinOf("/sdcard/pinC"));
+    // Thor not connected: every pin dimmed, pin button off; nothing crashes.
+    S.connected = false; renderLibraryViews();
+    check("pins: Thor not connected -> pins dimmed with 'not found', pin button disabled",
+      sidePins().every((r) => r.classList.contains("missing") && r.querySelector(".pin-note")) && pinChips().every((c) => c.classList.contains("missing")) && pinBtn.disabled);
+    S.connected = true; renderLibraryViews();
+
+    // Cap: 12 pins, the 13th gets a short message and is not pinned.
+    H.pins = Array.from({ length: 12 }, (_, i) => ({ storage: "/sdcard", path: `/sdcard/cap${i}` }));
+    await loadPins();
+    await openAt("/sdcard/pinA");
+    const addsBefore = callsOf("add_pin").length;
+    list.focus(); key("d", { ctrlKey: true });
+    await until(() => callsOf("add_pin").length > addsBefore);
+    await sleep(60);
+    check("pins: capped at 12 with a short message", PINS.list.length === 12 && H.pins.length === 12 && !pinOf("/sdcard/pinA") &&
+      pinBtn.getAttribute("aria-pressed") === "false" && errToasts().some((t) => t.includes("up to 12")), errToasts().pop());
+    H.pins = [];
+    await loadPins();
+    check("pins: no pins -> Start row hidden again", $("#start-pins").classList.contains("hidden") && sidePins().length === 0);
 
     check("no JS errors logged", !(H.logs || []).length, (H.logs || []).join(" | "));
   } catch (e) {
