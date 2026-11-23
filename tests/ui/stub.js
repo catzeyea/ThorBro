@@ -36,6 +36,31 @@
     if (H.stream.failStart[id]) H.stream.failures.push({ display: id, seq: ++H.stream.seq, message: H.stream.failStart[id] });
     else if (!H.stream.running.includes(id)) H.stream.running.push(id);
   };
+  // Fake Sunshine / Moonlight side for the "Stream PC games" sub-tab.
+  H.pc = {
+    status: {
+      os: "linux",
+      sunshine: {
+        executable: "/usr/bin/sunshine", service: { state: "running", detail: "active" }, port: 47989, admin_port: 47990,
+        server: { hostname: "my-pc", gamestream_version: "7.1.431.-1", uniqueid: "0123ABCD-4567-89EF-0123-456789ABCDEF", https_port: 47984, current_game: 0, busy: false },
+        error: null,
+      },
+      addresses: {
+        lan: [{ address: "192.168.1.20", interface: "eth0", kind: "lan", virtual_adapter: false }, { address: "172.17.0.1", interface: "docker0", kind: "lan", virtual_adapter: true }],
+        recommended_lan: "192.168.1.20",
+        tailscale: { cli_found: false, backend_state: "", running: false, ipv4: null, dns_name: null, note: "Tailscale CLI not found, showing LAN addresses only." },
+        error: null,
+      },
+    },
+    thor: { connected: true, device: "AYN Thor", moonlight: null, tailscale: null, error: null },
+    login: { state: "not_stored", username: null, sunshine_version: null, message: "Sunshine has a login." },
+    goodLogin: { username: "admin", password: "secret" },
+    pairings: { supported: true, pairings: [] },
+    pinResult: true,
+    apps: ["Desktop", "Tom's \"Game\""],
+    // Answer of pc_stream_send_profile (thor::SendProfileResult); failures via H.fail.pc_stream_send_profile.
+    sendProfile: { message: "Starting: Intent { cmp=dev.catzeyea.thorbro/.android.MainActivity (has extras) }", games: 2, encoded_chars: 424, note: null },
+  };
   const delay = (cmd, args) => {
     const l = H.latency[cmd];
     return typeof l === "function" ? l(args) : (l ?? H.defaultLatency);
@@ -81,6 +106,25 @@
     },
     stream_stop: () => { H.stream.running = []; H.stream.failures = []; },
     stream_status: () => streamStatus(),
+    pc_stream_detect: () => JSON.parse(JSON.stringify(H.pc.status)),
+    pc_stream_thor_apps: () => JSON.parse(JSON.stringify(H.pc.thor)),
+    pc_stream_login_status: () => ({ ...H.pc.login }),
+    pc_stream_save_login: ({ username, password }) => {
+      if (username !== H.pc.goodLogin.username || password !== H.pc.goodLogin.password) throw "Sunshine rejected the login (wrong username or password).";
+      H.pc.login = { state: "ok", username, sunshine_version: "2026.914.233613", message: null };
+      return { ...H.pc.login };
+    },
+    pc_stream_forget_login: () => { H.pc.login = { state: "not_stored", username: null, sunshine_version: null, message: null }; },
+    pc_stream_create_login: () => "Login created and saved in the keychain.",
+    pc_stream_restart_sunshine: () => null,
+    pc_stream_pairings: () => JSON.parse(JSON.stringify(H.pc.pairings)),
+    pc_stream_submit_pin: () => H.pc.pinResult,
+    pc_stream_apps: () => H.pc.apps.slice(),
+    pc_stream_play: () => ({ message: "Starting: Intent { cmp=com.limelight/.ShortcutTrampoline }", pc_busy: false }),
+    pc_stream_profile: () => ({ json: '{\n  "format": "thorbro.stream-profile"\n}', note: null }),
+    pc_stream_send_profile: () => ({ ...H.pc.sendProfile }),
+    pc_stream_open_link: () => null,
+    pc_stream_open_web_ui: () => null,
   };
   async function invoke(cmd, args = {}) {
     H.calls.push({ cmd, args: JSON.parse(JSON.stringify(args)), t: performance.now() });

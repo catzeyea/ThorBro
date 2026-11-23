@@ -88,6 +88,11 @@
 
   <!-- ============================ Stream ============================ -->
   <section class="page" id="page-stream">
+    <nav class="subtabs" role="tablist">
+      <button class="subtab active" data-sub="mirror" role="tab">Mirror Thor screens</button>
+      <button class="subtab" data-sub="pc" role="tab">Stream PC games to your Thor</button>
+    </nav>
+    <div class="subpage active" id="stream-sub-mirror">
     <h1>Mirror screens</h1>
     <p class="dim">Shows the Thor's screens on your PC over USB (scrcpy), each in its own window. View only, no control. Audio comes with the top screen.</p>
     <div class="stream-toolbar">
@@ -106,6 +111,48 @@
         <button class="stream-btn" data-which="bottom"><span class="big">▢</span>Bottom only</button>
       </div>
     </details>
+    </div>
+
+    <!-- Stream PC games: Sunshine on the PC, Moonlight on the Thor (js/pcstream.js, src/pcstream/). -->
+    <div class="subpage" id="stream-sub-pc">
+      <div class="saves-head">
+        <div>
+          <h1>Stream PC games to your Thor</h1>
+          <p class="dim">Uses Sunshine on this PC and Moonlight on the Thor, optionally over Tailscale. ThorBro doesn't install them, it checks the setup, helps with pairing and starts games on the Thor.</p>
+        </div>
+        <button id="pc-refresh">Check again</button>
+      </div>
+      <div class="cards pc-cards">
+        <div class="card" id="pc-sunshine"><div class="card-top"><h2>Sunshine on this PC</h2></div><div class="pc-body dim">Not checked yet.</div></div>
+        <div class="card" id="pc-addresses"><div class="card-top"><h2>Addresses of this PC</h2></div><div class="pc-body dim">Not checked yet.</div></div>
+        <div class="card" id="pc-thor"><div class="card-top"><h2>Apps on the Thor</h2></div><div class="pc-body dim">Not checked yet.</div></div>
+        <div class="card" id="pc-login"><div class="card-top"><h2>Sunshine login</h2></div><div class="pc-body dim">Not checked yet.</div></div>
+        <div class="card" id="pc-pair"><div class="card-top"><h2>Pair Moonlight with this PC</h2></div><div class="pc-body dim">Not checked yet.</div></div>
+        <div class="card" id="pc-games"><div class="card-top"><h2>Play on Thor</h2><button class="flat" id="pc-games-reload" title="Reload the game list">⟳</button></div><div class="pc-body dim">Not checked yet.</div></div>
+        <div class="card" id="pc-latency">
+          <div class="card-top"><h2>Low-latency checklist</h2></div>
+          <ul class="pc-check">
+            <li><b>PC on a cable.</b> Connect the PC to the router by Ethernet. If it has Ethernet and Wi-Fi, turn off all but the fastest.</li>
+            <li><b>Thor on 5 GHz Wi-Fi</b> (Wi-Fi 5 or 6), close to the router.</li>
+            <li><b>GPU sync:</b> NVIDIA: turn on <i>Fast Sync</i>. AMD on Windows: turn on <i>Enhanced Sync</i>. Sunshine's docs say both may cut latency.</li>
+            <li><b>Measure it:</b> in Moonlight on the Thor, Settings → "Show performance stats while streaming". It shows network latency and decode time.</li>
+            <li><b>Try 120 FPS</b> in Moonlight: the Thor's top screen supports 120 Hz at 1920×1080, and Moonlight says a higher frame rate can lower decode latency on some devices.</li>
+          </ul>
+          <div class="pc-links">
+            <button data-link="moonlight_setup">Moonlight setup guide ↗</button>
+            <button data-link="moonlight_stats">What the stats mean ↗</button>
+            <button data-link="sunshine_performance">Sunshine performance tuning ↗</button>
+            <button data-link="moonlight_troubleshooting">Troubleshooting ↗</button>
+          </div>
+        </div>
+        <div class="card" id="pc-profile">
+          <div class="card-top"><h2>Stream profile</h2></div>
+          <div class="pc-hint">The data the ThorBro app on the Thor needs to start PC games: PC name, host ID, addresses, port and game names. No passwords or keys. Format: docs/STREAM-PROFILE.md.</div>
+          <div class="pc-links"><button id="pc-profile-show">Show stream profile</button><button id="pc-profile-send">Send to Thor app</button></div>
+          <div class="pc-hint hidden" id="pc-profile-status"></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ============================ Overlays ============================ -->
@@ -126,6 +173,7 @@
   <script src="js/saves-setup.js"></script>
   <script src="js/saves-import.js"></script>
   <script src="js/stream.js"></script>
+  <script src="js/pcstream.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

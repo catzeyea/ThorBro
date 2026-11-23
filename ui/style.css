@@ -345,6 +345,39 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .stream-error { color: var(--danger); font-size: 12px; white-space: pre-wrap; user-select: text; }
 .stream-quick summary { cursor: pointer; color: var(--dim); }
 .stream-quick .stream-grid { margin-top: 10px; }
+.subtabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.subtab { border: none; background: transparent; padding: 6px 12px; color: var(--dim); }
+.subtab.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.subpage { display: none; flex-direction: column; gap: 10px; }
+.subpage.active { display: flex; }
+
+/* --- Stream PC games --- */
+.pc-body { display: flex; flex-direction: column; gap: 6px; }
+.pc-row { display: flex; gap: 8px; align-items: baseline; }
+.pc-row > .k { color: var(--dim); flex: 0 0 110px; }
+.pc-row > .v { flex: 1; min-width: 0; user-select: text; overflow-wrap: anywhere; }
+.pc-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--panel-2); color: var(--dim); }
+.pc-badge.ok { background: var(--ok-soft); color: var(--ok); }
+.pc-badge.warn { background: var(--warn-soft); color: var(--warn); }
+.pc-badge.bad { background: rgba(207, 34, 46, 0.12); color: var(--danger); }
+.pc-addr { font-family: ui-monospace, "JetBrains Mono", monospace; user-select: text; }
+.pc-hint { font-size: 12px; color: var(--dim); white-space: pre-wrap; }
+.pc-hint.warn { color: var(--warn); }
+.pc-links { display: flex; gap: 6px; flex-wrap: wrap; }
+.pc-links button { font-size: 12px; padding: 4px 10px; }
+.pc-form { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; }
+.pc-form input[type=password] { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; min-width: 0; user-select: text; width: 100%; }
+.pc-apps { display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow: auto; }
+.pc-app { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+.pc-app .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.pc-check { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.pc-pin { font: 600 20px ui-monospace, monospace; letter-spacing: 6px; width: 120px !important; text-align: center; }
+.pc-profile-json {
+  width: 100%; font: 12px ui-monospace, "JetBrains Mono", monospace; user-select: text;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical;
+}
+#stream-sub-pc details > summary { cursor: pointer; color: var(--dim); }
+#stream-sub-pc details[open] > summary { margin-bottom: 6px; }
 
 /* --- Toasts --- */
 .toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; width: calc(100% - 32px); pointer-events: none; }

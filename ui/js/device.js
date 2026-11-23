@@ -35,6 +35,7 @@ async function pollDevice(force = false) {
     if (device.connected) await loadPlaces(true);
     else { S.entries = []; FM.status = "offline"; clearDirCache(); renderFiles(); updateLibHint(); }
     if (S.tab === "saves") refreshCards();
+    if (S.tab === "stream" && PCS.sub === "pc") pcThorApps();
   }
 }
 $("#device").onclick = () => pollDevice(true);

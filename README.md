@@ -26,6 +26,7 @@
 | **Unpacking** | ThorBro extracts zip, 7z and tar itself, and can do it before copying. Archives already on the Thor can be extracted in place. File names are made SD-card safe automatically. |
 | **Saves** | Set up save folders per game, then push them PC → Thor or Thor → PC with one click. ThorBro shows which side is newer and **makes a backup before every overwrite**. You can also import saves from archives, e.g. 100% saves from the internet. |
 | **Stream** | Mirror the top screen, the bottom screen or both to your PC over USB (via scrcpy), each in its own window. ThorBro detects the screens, and size, bitrate and always-on-top are remembered per screen. View only, with audio from the top screen. |
+| **Stream PC games** | The other direction: play PC games on the Thor with [Sunshine](https://github.com/LizardByte/Sunshine) (PC) and [Moonlight](https://github.com/moonlight-stream/moonlight-android) (Thor), at home or over Tailscale. ThorBro checks the setup, helps with pairing and starts a game on the Thor with one click. Sunshine and Moonlight are installed separately. |
 
 ---
 
@@ -138,6 +139,19 @@ Size, bitrate and *Always on top* are set per screen and remembered for the next
 If a stream fails to start, the error appears on its card and the other screen keeps running.
 *Quick start* below the cards starts the screens with the fixed ids (0 = top, 4 = bottom) without detecting them first.
 
+### Stream PC games to your Thor
+
+Needs [Sunshine](https://docs.lizardbyte.dev/projects/sunshine/latest/md_docs_2getting__started.html) on the PC
+and [Moonlight](https://github.com/moonlight-stream/moonlight-android) on the Thor; for playing away from home also
+[Tailscale](https://tailscale.com/download) on both. ThorBro doesn't install or ship any of them.
+
+Open **Stream → Stream PC games to your Thor**. ThorBro shows whether Sunshine runs, the PC's LAN and Tailscale
+addresses and whether Moonlight is on the Thor. Enter your Sunshine web UI login once (it is kept in your system's
+keychain, not in ThorBro's settings). Then:
+
+1. **Pair:** tap the PC in Moonlight on the Thor, type the PIN Moonlight shows into ThorBro, click *Pair*.
+2. **Play:** open the PC's game list in Moonlight once, then use *Play on Thor* next to any game in ThorBro.
+
 ### Command line
 
 ```text
@@ -212,6 +226,7 @@ The Rust backend lives in `src/` (Tauri 2). The UI is plain HTML/CSS/JS in `ui/`
 | `src/saves/` | finding, comparing, syncing and importing saves |
 | `src/unpack.rs` | extracting archives |
 | `src/stream.rs` | launching scrcpy |
+| `src/pcstream/` | Sunshine, Tailscale and Moonlight for streaming PC games to the Thor |
 | `ui/js/` | the UI scripts (loaded in order by `ui/index.html`) |
 
 A longer walkthrough is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (German version: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md)).
