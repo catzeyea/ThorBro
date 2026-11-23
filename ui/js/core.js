@@ -4,7 +4,7 @@
 // into plain <script> files (no bundler, no modules). They share one global scope and are
 // loaded in this order by index.html:
 //   core.js → dialogs.js → device.js → files.js → files-actions.js → esde.js → transfer.js → saves.js →
-//   saves-setup.js → saves-import.js → stream.js → pcstream.js → main.js
+//   saves-setup.js → saves-import.js → stream.js → pcstream.js → pins.js → start.js → main.js
 // Code that runs immediately at load time may only use names from the same or earlier files.
 // Inside functions, any name works, because those run later.
 "use strict";

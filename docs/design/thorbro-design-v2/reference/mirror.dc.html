@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ThorBro Mirror</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+.tab:hover{background:rgba(239,231,210,.12)}
+.btn:hover{transform:translate(-1px,-1px)}
+.tile{transition:transform .12s ease, box-shadow .12s ease}
+.tile:hover{transform:translate(-2px,-3px) rotate(0deg) !important;box-shadow:8px 8px 0 #0c0f0f !important}
+</style>
+</helmet>
+<div style="min-height: 900px; box-sizing: border-box; padding: 28px 48px 64px; font-family: 'JetBrains Mono', monospace; color: #EFE7D2; background: #1a1e1f">
+<div style="max-width: 1344px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px">
+<img src="/_blob/0eb3e09f856e1c33cce2d17a04f50fa1" alt="" width="56" height="56" style="width: 56px; height: 56px; display: block">
+<span style="font-weight: 700; font-size: 28px; letter-spacing: -0.01em">ThorBro</span>
+</div>
+<nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<a class="tab" href="Main.dc.html" style="padding: 9px 20px; border-radius: 16px; border: 2px solid transparent; font-weight: 500">Start</a>
+<a class="tab" href="Files.dc.html" style="padding: 9px 20px; border-radius: 16px; border: 2px solid transparent; font-weight: 500">Files</a>
+<a class="tab" href="PCMirror.dc.html" style="padding: 9px 20px; border-radius: 16px; border: 2px solid transparent; font-weight: 500">Saves</a>
+<a class="tab" href="PCMirror.dc.html" style="padding: 9px 22px; border-radius: 22px 16px 24px 15px / 16px 22px 14px 24px; border: 2px solid #EFE7D2; background: #F0A94B; color: #1a1e1f; font-weight: 600; box-shadow: 3px 3px 0 #7a4a0f; transform: rotate(-1deg)">Stream</a>
+</nav>
+<div style="display: inline-flex; align-items: center; gap: 10px; padding: 9px 18px; border-radius: 18px 22px 16px 24px / 22px 16px 24px 18px; border: 2px solid rgba(239,231,210,0.7); font-weight: 500; font-size: 15px">
+<span style="width: 10px; height: 10px; border-radius: 50%; background: #A5B98C"></span>Connected: AYN Thor
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; gap: 10px">
+<a class="tab" href="PCStream.dc.html" style="padding: 10px 20px; border-radius: 14px; border: 2px solid transparent; font-weight: 500; font-size: 15px">Stream PC games</a>
+<a class="tab" href="PCMirror.dc.html" style="padding: 10px 20px; border-radius: 18px 14px 20px 13px / 14px 20px 13px 18px; border: 2px solid #EFE7D2; background: #A5B98C; color: #1a1e1f; font-weight: 600; font-size: 15px; box-shadow: 3px 3px 0 #4a5c38">Mirror Thor screens</a>
+</div>
+<a class="btn" href="PCHelp.dc.html" style="display: inline-flex; align-items: center; gap: 10px; padding: 6px 18px 6px 8px; border-radius: 999px; border: 2px solid rgba(239,231,210,0.78); font-weight: 500; font-size: 15px">
+<span style="width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid #EFE7D2; font-weight: 700; font-size: 16px">?</span>Help</a>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-weight: 700; font-size: 32px; letter-spacing: -0.02em">Mirror screens</h1>
+<span style="font-size: 15px; line-height: 1.5; color: #B4B6AA; max-width: 760px">Shows the Thor's screens on your PC over USB (scrcpy). View only, no control. Audio comes with the top screen.</span>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start">
+
+<div style="flex: 3 1 640px; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px 24px">
+<sc-for list="{{tiles}}" as="t" hint-placeholder-count="3">
+<a class="tile" href="PCMirror.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 30px 20px; min-height: 230px; box-sizing: border-box; border-radius: {{t.radius}}; border: 2px solid rgba(239,231,210,0.78); background: #252a2a; box-shadow: {{t.shadow}}; transform: rotate({{t.rot}}deg)">
+<span style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+<sc-for list="{{t.screens}}" as="sc" hint-placeholder-count="2">
+<span style="width: {{sc.w}}px; height: {{sc.h}}px; border-radius: 6px; border: 3px solid #A5B98C; background: {{sc.fill}}"></span>
+</sc-for>
+</span>
+<span style="font-weight: 700; font-size: 22px">{{t.name}}</span>
+</a>
+</sc-for>
+</div>
+
+<div style="flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 10px">
+<img src="/_blob/bd9e62139c2ac36e41660615415574c1" alt="" width="170" height="170" style="width: 170px; height: 170px; display: block">
+<span style="font-size: 14px; color: #B4B6AA">Nothing running right now.</span>
+</div>
+
+</div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const A = 'rgba(165,185,140,0.35)';
+    return {
+      tiles: [
+        { name: 'Both screens', radius: '22px 18px 24px 16px / 18px 24px 16px 22px', rot: -0.6, shadow: '5px 5px 0 #0c0f0f', screens: [{ w: 96, h: 54, fill: A }, { w: 76, h: 62, fill: A }] },
+        { name: 'Top only', radius: '18px 24px 16px 22px / 24px 16px 22px 18px', rot: 0.5, shadow: '4px 6px 0 #0c0f0f', screens: [{ w: 96, h: 54, fill: A }] },
+        { name: 'Bottom only', radius: '24px 16px 20px 22px / 16px 22px 24px 18px', rot: -0.4, shadow: '6px 4px 0 #0c0f0f', screens: [{ w: 76, h: 62, fill: A }] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

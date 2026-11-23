@@ -25,7 +25,7 @@
 | **Game sorting** | Drop a game into the window and ThorBro detects the system from the ES-DE folders and file extensions, then suggests the matching `ROMs/<system>` folder. Switch updates and DLC can go to `switch/update`. |
 | **Unpacking** | ThorBro extracts zip, 7z and tar itself, and can do it before copying. Archives already on the Thor can be extracted in place. File names are made SD-card safe automatically. |
 | **Saves** | Set up save folders per game, then push them PC → Thor or Thor → PC with one click. ThorBro shows which side is newer and **makes a backup before every overwrite**. You can also import saves from archives, e.g. 100% saves from the internet. |
-| **Stream** | Mirror the top screen, the bottom screen or both to your PC over USB (via scrcpy), each in its own window. ThorBro detects the screens, and size, bitrate and always-on-top are remembered per screen. View only, with audio from the top screen. |
+| **Stream** | Mirror the top screen, the bottom screen or both to your PC over USB (via scrcpy), each in its own window. View only, with audio from the top screen. |
 | **Stream PC games** | The other direction: play PC games on the Thor with [Sunshine](https://github.com/LizardByte/Sunshine) (PC) and [Moonlight](https://github.com/moonlight-stream/moonlight-android) (Thor), at home or over Tailscale. ThorBro checks the setup, helps with pairing and starts a game on the Thor with one click. Sunshine and Moonlight are installed separately. |
 
 ---
@@ -114,7 +114,8 @@ Start ThorBro. The device name shows up in the top right once the Thor is detect
 - **Add games:** drag a file or folder into the window. If ThorBro recognizes a game, a dialog shows the suggested target folder (★). You can change it before copying. Regular files go straight into the current folder.
 - **Copy to PC:** drag entries out of the window onto your desktop or file manager, or press *Copy to PC*. Files end up in `Downloads/thor`.
 - **Organize on the Thor:** select with click, Ctrl+click, Shift+click, Ctrl+A or by dragging a frame on the empty area. Drag entries onto a folder or a part of the path bar to move them (hold Ctrl to copy). Cut/copy/paste work with Ctrl+X/C/V and the right-click menu. Moving inside one storage is instant; copying, or moving between internal storage and SD card, runs in the copy queue with progress and *Cancel*.
-- **Keys:** Enter open · Backspace or Alt+Up up · Alt+Left/Right back/forward · F2 rename · Del delete · Ctrl+Shift+N new folder · F5 refresh · type letters to jump to a name.
+- **Pinned folders:** the pin button next to refresh (or Ctrl+D) pins the open Thor folder, e.g. where your screenshots land. Pins show in the sidebar and on the Start tab; one click opens them. Up to 12 pins; a folder that is gone shows as "not found" and can be unpinned with × or right-click.
+- **Keys:** Enter open · Backspace or Alt+Up up · Alt+Left/Right back/forward · F2 rename · Del delete · Ctrl+Shift+N new folder · Ctrl+D pin/unpin folder · F5 refresh · type letters to jump to a name.
 - **Archives:** when dropping, you can tick *Extract first*. It's pre-ticked for systems whose emulator can't read packed games. rar and tar.xz need [7-Zip](https://www.7-zip.org) on the PC.
 
 ### Saves
@@ -131,13 +132,10 @@ The old save is backed up before every overwrite. You'll find the backups in the
 
 ### Stream
 
-Open the **Stream** tab. ThorBro asks scrcpy which screens it can see and shows one card per screen.
-Start a single screen from its card or click *Stream both*. Each screen opens in its own window, and every
-card has its own *Stop* button (*Stop all* closes everything). You keep playing on the Thor.
-
-Size, bitrate and *Always on top* are set per screen and remembered for the next time.
-If a stream fails to start, the error appears on its card and the other screen keeps running.
-*Quick start* below the cards starts the screens with the fixed ids (0 = top, 4 = bottom) without detecting them first.
+Open **Stream → Mirror Thor screens** and click *Both screens*, *Top only* or *Bottom only*. Each screen opens in
+its own window; *Stop mirroring* closes them. You keep playing on the Thor. The tiles use the Thor's usual display
+ids (0 = top, 4 = bottom). If a screen fails to start, the error is shown under the status and the other screen
+keeps running.
 
 ### Stream PC games to your Thor
 
@@ -145,11 +143,11 @@ Needs [Sunshine](https://docs.lizardbyte.dev/projects/sunshine/latest/md_docs_2g
 and [Moonlight](https://github.com/moonlight-stream/moonlight-android) on the Thor; for playing away from home also
 [Tailscale](https://tailscale.com/download) on both. ThorBro doesn't install or ship any of them.
 
-Open **Stream → Stream PC games to your Thor**. ThorBro shows whether Sunshine runs, the PC's LAN and Tailscale
-addresses and whether Moonlight is on the Thor. Enter your Sunshine web UI login once (it is kept in your system's
-keychain, not in ThorBro's settings). Then:
+Open **Stream → Stream PC games**. The chips at the top show whether Sunshine runs, whether Tailscale is connected
+and whether Moonlight is on the Thor; click one for details. Enter your Sunshine web UI login once under
+**Help → Sunshine on this PC** (it is kept in your system's keychain, not in ThorBro's settings). Then:
 
-1. **Pair:** tap the PC in Moonlight on the Thor, type the PIN Moonlight shows into ThorBro, click *Pair*.
+1. **Pair:** tap the PC in Moonlight on the Thor, click *Pair Moonlight* in ThorBro, type the PIN Moonlight shows, click *Pair*.
 2. **Play:** open the PC's game list in Moonlight once, then use *Play on Thor* next to any game in ThorBro.
 
 ### Command line
@@ -178,8 +176,7 @@ Game names can be shortened (`thorbro pc totk`, `thorbro status zelda`).
 | **Linux: "no permissions" / "unauthorized"** | udev rules are missing. Install `android-udev` (Arch) or `android-sdk-platform-tools-common` (Debian/Ubuntu), then replug. |
 | **"adb not found"** | Windows: keep the `tools` folder next to `ThorBro.exe`. Linux/macOS: install adb as shown above. |
 | **No game folders in the sidebar** | Launch ES-DE on the Thor once so it creates `ROMs/` with the system folders, then reload ThorBro. |
-| **Stream tab finds only one screen** | scrcpy can't see the bottom screen right now. Check that it's switched on and click *Detect screens* again. `thorbro displays` shows the same list in a terminal. If it still finds one, please [open an issue](../../issues). |
-| **Bottom screen stays black in the stream** | The display number can change between firmware versions. Use the cards (they use the detected ids) instead of *Quick start*, and please [open an issue](../../issues). |
+| **Bottom screen doesn't start or stays black** | Check that the bottom screen is switched on. The display number can change between firmware versions: `thorbro displays` lists the ids scrcpy sees. If the bottom screen isn't id 4 there, please [open an issue](../../issues). |
 
 Found a bug or have an idea? [Open an issue](../../issues). Please include your OS, the ThorBro version and what exactly happened.
 

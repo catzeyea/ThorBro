@@ -171,6 +171,41 @@ pub fn set_folder_system(path: String, system: Option<String>) -> CmdResult<()> 
     settings::save(&config)
 }
 
+// --- Pinned folders ----------------------------------------------------------------------------
+
+/// The pinned Thor folders, in pin order (stored in settings.json, no adb needed).
+#[tauri::command]
+pub fn pins() -> Vec<settings::Pin> {
+    settings::load().pins
+}
+
+/// Pins the Thor folder `path` on the storage `storage` (root path, e.g. `/sdcard`).
+/// Returns the new list. Fails with a short message when the cap (`settings::MAX_PINS`) is reached.
+#[tauri::command]
+pub fn add_pin(storage: String, path: String) -> CmdResult<Vec<settings::Pin>> {
+    let pin = settings::Pin::new(&storage, &path)?;
+    let mut config = settings::load();
+    settings::add_pin(&mut config, pin)?;
+    settings::save(&config)?;
+    Ok(config.pins)
+}
+
+/// Unpins a folder (the folder itself stays untouched). Returns the new list.
+#[tauri::command]
+pub fn remove_pin(storage: String, path: String) -> CmdResult<Vec<settings::Pin>> {
+    let pin = settings::Pin::new(&storage, &path)?;
+    let mut config = settings::load();
+    settings::remove_pin(&mut config, &pin);
+    settings::save(&config)?;
+    Ok(config.pins)
+}
+
+/// Which of the pinned folders `paths` still exist on the Thor (one `true`/`false` per path).
+#[tauri::command]
+pub async fn pins_found(paths: Vec<String>) -> CmdResult<Vec<bool>> {
+    run_blocking(move || files::dirs_exist(&paths)).await
+}
+
 // --- File manager ------------------------------------------------------------------------------
 
 /// Lists a Thor folder.
@@ -217,10 +252,10 @@ pub async fn delete(path: String) -> CmdResult<()> {
     run_blocking(move || files::delete(&path)).await
 }
 
-/// Copies a Thor entry to `~/Downloads/thor`. Returns that folder.
+/// Copies a Thor entry to `~/Downloads/thor` ("transfer" progress events while it runs). Returns that folder.
 #[tauri::command]
-pub async fn pull(path: String) -> CmdResult<String> {
-    run_blocking(move || files::pull(&path)).await
+pub async fn pull(app: AppHandle, path: String) -> CmdResult<String> {
+    run_blocking(move || files::pull(&app, &path)).await
 }
 
 /// Fetches a Thor entry into the drag cache (first half of dragging a file out).

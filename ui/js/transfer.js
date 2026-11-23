@@ -153,19 +153,65 @@ function buildSortFoot(box, close, getRows) {
   return foot;
 }
 
-// ---------------------------------------------------------------- Progress
+// ---------------------------------------------------------------- Progress strip
+//
+// The strip at the bottom of the Files view shows the "transfer" events Rust emits while copying
+// (files.rs: copy queue, drag-out fetch, "Copy to PC"): mascot, what is being copied, "file X of Y",
+// percent, the bar and Cancel. A finished batch stays visible for a moment, then the strip hides.
+
+/** How long the "done" state of the strip stays visible (ms). */
+const TRANSFER_DONE_MS = 6000;
+
+/** Strip state. `pull`: { index, count } while "Copy to PC" runs (its events carry no position). */
+const STRIP = { pull: null, hideTimer: 0 };
+
+/** Shows one progress event (files::Progress) on the strip. */
+function showTransfer(progress) {
+  clearTimeout(STRIP.hideTimer);
+  const strip = $("#progress");
+  strip.classList.remove("hidden");
+  const failed = !progress.busy && !!progress.error;
+  strip.classList.toggle("done", !progress.busy && !failed);
+  strip.classList.toggle("failed", failed);
+  $("#p-mascot").src = `assets/mascot/thorbro-${progress.busy ? "busy" : failed ? "ask" : "done"}.svg`;
+  $("#p-text").textContent = progress.text;
+  $("#p-detail").textContent = failed ? progress.error : progress.detail;
+
+  // "file X of Y": the copy queue sends its position; "Copy to PC" is counted in pullSelected.
+  const position = progress.count > 1 ? progress : (STRIP.pull && !progress.cancellable ? STRIP.pull : null);
+  const meta = [];
+  if (progress.busy && position && position.count > 1) meta.push(`file ${position.index} of ${position.count}`);
+  // fraction 0 while busy = unknown → animated bar at 30 %, no percent.
+  const unknown = progress.busy && progress.fraction <= 0;
+  if (progress.busy && !unknown) meta.push(`${Math.round(progress.fraction * 100)}%`);
+  $("#p-meta").textContent = meta.join(" · ");
+  $("#p-bar").parentElement.classList.toggle("indet", unknown);
+  $("#p-bar").style.width = `${Math.round((unknown ? 0.3 : progress.fraction) * 100)}%`;
+  $("#p-cancel").classList.toggle("hidden", !(progress.busy && progress.cancellable));
+  if (!progress.busy) STRIP.hideTimer = setTimeout(hideTransfer, TRANSFER_DONE_MS);
+}
+
+function hideTransfer() {
+  clearTimeout(STRIP.hideTimer);
+  $("#progress").classList.add("hidden");
+}
+
+/**
+ * "Copy to PC" (files-actions.js) has no final event: it calls pullProgress() before each entry
+ * and pullFinished(text) or pullFinished(null) afterwards (null = failed, the error is a toast).
+ */
+function pullProgress(index, count) {
+  STRIP.pull = { index, count };
+}
+function pullFinished(text) {
+  STRIP.pull = null;
+  if (text) showTransfer({ busy: false, text, detail: "", fraction: 1, error: null, cancellable: false, count: 0 });
+  else hideTransfer();
+}
 
 // Emitted by files.rs (emit_progress) while copying / extracting / fetching.
 T.event.listen("transfer", async ({ payload: progress }) => {
-  $("#progress").classList.remove("hidden");
-  $("#dropzone").classList.toggle("hidden", progress.busy);
-  $("#p-text").textContent = progress.text;
-  $("#p-detail").textContent = progress.detail;
-  $("#p-cancel").classList.toggle("hidden", !(progress.busy && progress.cancellable));
-  // fraction 0 while busy = unknown → animated bar at 30 %.
-  const unknown = progress.busy && progress.fraction <= 0;
-  $("#p-bar").parentElement.classList.toggle("indet", unknown);
-  $("#p-bar").style.width = `${Math.round((unknown ? 0.3 : progress.fraction) * 100)}%`;
+  showTransfer(progress);
   if (!progress.busy) await onTransferFinished(progress);
 });
 
@@ -183,7 +229,6 @@ async function onTransferFinished(progress) {
   }
   await refreshLibs(); // game counts changed
   if (progress.dests.length) renderFiles();
-  setTimeout(() => { if (!$("#dropzone").classList.contains("hidden")) $("#progress").classList.add("hidden"); }, 6000);
 }
 
 /** Cancel button next to the progress bar (only shown for copy jobs, see Progress.cancellable). */

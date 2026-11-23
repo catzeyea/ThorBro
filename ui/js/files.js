@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------- Tuning
 
 /** Height of one list row in px. Must be fixed for the virtualized list (see --row-h in CSS). */
-const ROW_HEIGHT_PX = 30;
+const ROW_HEIGHT_PX = 36;
 /** Rows rendered above and below the visible area, so fast scrolling doesn't show gaps. */
 const OVERSCAN_ROWS = 8;
 /** Empty space below the last row: room to start a rubber band or right-click the background. */
@@ -122,6 +122,7 @@ function storageOf(path) {
 /** Shows the "No games folder found" hint while there is no library. */
 function updateLibHint() {
   $("#no-lib").classList.toggle("hidden", !S.connected || S.libs.length > 0);
+  renderLibraryViews(); // Start tiles and sidebar (start.js)
 }
 
 /** Re-reads the libraries (game counts, systems) and redraws the list. */
@@ -294,6 +295,7 @@ function go(path, { history = true, focus = null } = {}) {
   FM.cwdRoot = S.root;
   if (focus) FM.pendingFocus = focus;
   renderCrumbs();
+  renderSidebar(); // highlight of the open location (start.js)
   updateNavButtons();
   if (!S.connected) {
     S.entries = [];
@@ -338,6 +340,7 @@ async function refreshListing(path) {
   } catch (e) {
     if (LISTING.latest.get(path) !== seq) return;
     DIR_CACHE.delete(path);
+    notePinListing(path, false); // pins.js: a pinned folder may be gone
     if (path !== S.cwd) return;
     stopLoadingHint();
     S.entries = [];
@@ -349,6 +352,7 @@ async function refreshListing(path) {
   if (LISTING.latest.get(path) !== seq) return; // a newer listing of this folder is on its way
   if (LISTING.ops.get(path)) { if (path === S.cwd) stopLoadingHint(); return; } // changed meanwhile
   cachePut(path, entries);
+  notePinListing(path, true); // pins.js
   if (path !== S.cwd) return;
   stopLoadingHint();
   S.entries = entries;
@@ -430,7 +434,7 @@ function renderCrumbs() {
   let pathSoFar = S.root;
   for (const part of parts) {
     pathSoFar += "/" + part;
-    html.push(`<span class="sep">›</span><button data-path="${esc(pathSoFar)}">${esc(part)}</button>`);
+    html.push(`<span class="sep">/</span><button data-path="${esc(pathSoFar)}">${esc(part)}</button>`);
   }
   crumbs.innerHTML = html.join("");
   crumbs.title = S.cwd;
@@ -636,10 +640,10 @@ function updateRow(row, entry, index) {
   }
 }
 
-/** The list has a scrollbar, the header doesn't: pad the header so the columns line up. */
+/** The list has a scrollbar, the header doesn't: pad the header so the columns line up (--row-pad in CSS). */
 function alignHeader() {
   const list = $("#filelist");
-  $("#list-head").style.paddingRight = `${12 + list.offsetWidth - list.clientWidth}px`;
+  $("#list-head").style.paddingRight = `calc(var(--row-pad) + ${list.offsetWidth - list.clientWidth}px)`;
 }
 
 $("#filelist").addEventListener("scroll", requestRender, { passive: true });
@@ -805,6 +809,7 @@ document.addEventListener("keydown", (e) => {
     else if (key === "ArrowUp") goUp();
     else return;
   } else if (ctrl && e.shiftKey && key === "n") newFolder();
+  else if (ctrl && key === "d") togglePin(); // pins.js
   else if (ctrl && key === "a") selectAll();
   else if (ctrl && key === "x") setClip("cut");
   else if (ctrl && key === "c") setClip("copy");

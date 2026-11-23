@@ -4,9 +4,12 @@ Runs the real `ui/index.html` and `ui/js/*` in headless Firefox with a fake Taur
 (`stub.js`: in-memory Thor file system, adjustable adb latency, injectable failures) and checks
 the file manager's behavior (`tests.js`): cache, request ordering, virtualization, keyed updates,
 selection, rename/new folder/move/delete with rollback, cut/copy/paste, context menu, drag & drop.
-For the stream tab (fake scrcpy in `stub.js`): display cards, per-display start/stop with options,
-"Stream both", failures on the card, the one-display hint, detection errors and the quick start.
-For the "Stream PC games" sub-tab (fake Sunshine/Moonlight in `stub.js`): status cards, login save/reject,
+For the stream tab (fake scrcpy in `stub.js`): the three mirror tiles (both / top / bottom),
+failures under the status (toasted once) and Stop. Also: the transfer strip (events, "file X of Y", Copy to PC),
+the keyboard shortcuts panel and that shortcuts don't fire while typing.
+Pinned folders (fake settings in `stub.js`): pin/unpin by button, Ctrl+D, "×" and right-click, pin order, per-storage pins,
+opening from the sidebar and the Start tab, "not found" (folder gone or Thor not connected) and the cap of 12.
+For the "Stream PC games" sub-tab and Help (fake Sunshine/Moonlight in `stub.js`): status chips, Help sections, login save/reject,
 pairing with and without `pairing_id`, game list, "Play on Thor" with the experimental display id, stream profile,
 "Send to Thor app" (sent / note / app not installed / too large).
 

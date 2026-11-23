@@ -40,7 +40,7 @@ For screen mirroring it starts `scrcpy`.
 | `library.rs` | Finding ES-DE `ROMs` folders and assigning dropped files to a system (Switch title ID, header bytes, file extension). |
 | `systems.rs` | Built-in list of known systems (aliases, extensions) for folders without ES-DE `systeminfo.txt`. |
 | `esde_import.rs` | "Import ES-DE info": preview and write ES-DE `systeminfo.txt` files (one place for the format), optional case-only renames to ES-DE folder names. |
-| `settings.rs` | `<config dir>/thorBro/settings.json` (`%APPDATA%`, `~/Library/Application Support`, `~/.config`): custom game library folders, systems picked per folder and the last used stream options per display. |
+| `settings.rs` | `<config dir>/thorBro/settings.json` (`%APPDATA%`, `~/Library/Application Support`, `~/.config`): custom game library folders, systems picked per folder, pinned Thor folders (storage + path, in pin order, at most 12) and the last used stream options per display. |
 | `unpack.rs` | Extracting archives (zip/7z/tar in Rust, otherwise external 7z/bsdtar/unrar), making file names FAT-safe. |
 | `stream.rs` | Detecting the displays (`scrcpy --list-displays`), starting and stopping one scrcpy window per display, recording why a stream failed. |
 | `pcstream/` | "Stream PC games to your Thor" (sub-tab of Stream): `sunshine.rs` (service state, `GET /serverinfo`), `network.rs` (LAN addresses, `tailscale` CLI), `admin.rs` (Sunshine admin API over HTTPS from Rust, login in the OS keychain, pairing, app list), `thor.rs` (Moonlight/Tailscale app check, "Play on Thor" and "Send to Thor app" via `am start`), `profile.rs` (stream profile JSON, see `STREAM-PROFILE.md`). Background: `PC-STREAMING-RESEARCH.md`. |
@@ -67,12 +67,14 @@ For screen mirroring it starts `scrcpy`.
 | `js/device.js` | Tabs and device detection (`pollDevice`). |
 | `js/files.js` | File manager tab, part 1: locations, listing cache, virtualized list, selection, history, keyboard. |
 | `js/files-actions.js` | File manager tab, part 2: cut/copy/paste, rename in place, move, delete, context menu, dragging rows (into folders or out to the PC). |
-| `js/transfer.js` | Sending to the Thor: drag & drop, sort dialog, copy queue, progress bar. |
+| `js/transfer.js` | Sending to the Thor: drag & drop, sort dialog, copy queue, transfer strip (shows the "transfer" events, incl. "file X of Y"). |
 | `js/saves.js` | Game cards, card menu, sync flow. |
 | `js/saves-setup.js` | Adding a game (search, AI suggestion, check). |
 | `js/saves-import.js` | Importing a save. |
-| `js/stream.js` | Stream tab, sub-tab "Mirror Thor screens": one card per detected display, Stream both / Stop all, quick start. |
-| `js/pcstream.js` | Stream tab, sub-tab "Stream PC games to your Thor": Sunshine / address / Thor checks, Sunshine login, pairing, game list with "Play on Thor", checklist, stream profile with "Send to Thor app". |
+| `js/stream.js` | Stream tab, sub-tab "Mirror Thor screens": three tiles (both / top / bottom, fixed ids 0 and 4), Stop, failures; the scrcpy display detection for the screen picker. |
+| `js/pcstream.js` | Stream tab, sub-tab "Stream PC games" (status chips, "Play on Thor", "Send to Thor app", pairing) and the Help page (Sunshine and login, addresses, Thor apps, screen picker, checklist, stream profile). |
+| `js/pins.js` | Pinned Thor folders: pin button in the path bar (Ctrl+D), "pinned" card in the sidebar, "pinned" row on the Start tab, "not found" state (`pins`, `add_pin`, `remove_pin`, `pins_found`). |
+| `js/start.js` | Start tab (drop zone, library tiles), the file manager's location sidebar, its "More" menu and keyboard shortcuts panel. |
 | `js/main.js` | Startup: first device poll and timers. |
 
 The JS files are classic `<script>` files without `type="module"`. They share one global scope,

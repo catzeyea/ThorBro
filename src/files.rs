@@ -295,11 +295,31 @@ pub fn pull_dir() -> PathBuf {
         .join("thor")
 }
 
-/// Copies a file or folder from the Thor into `pull_dir()`. Returns that folder's path.
-pub fn pull(src: &str) -> Result<String, String> {
+/// Copies a file or folder from the Thor into `pull_dir()` ("Copy to PC"). Returns that folder's
+/// path. Sends "transfer" progress events while copying (not cancellable, no final event: the
+/// caller gets the result directly).
+pub fn pull(app: &AppHandle, src: &str) -> Result<String, String> {
     let dest = pull_dir();
     std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-    check(adb::run(&["pull", src, &dest.to_string_lossy()]))?;
+    let src = src.trim_end_matches('/');
+    let name = adb::posix_basename(src).to_string();
+    let total = remote_size(src).max(1);
+    let report = |text: String, detail: String, fraction: f64| emit_progress(app, busy_progress(text, detail, fraction, false));
+    report(format!("Copying {name} to the PC ({})", human(total)), format!("to {}", dest.display()), 0.0);
+    let mut child = spawn_adb(&["pull", src, &dest.to_string_lossy()]).map_err(|e| format!("{name}: {e}"))?;
+
+    let target = dest.join(&name);
+    let started = Instant::now();
+    wait_with_polling(&mut child, FETCH_SLEEP, FETCH_POLL_INTERVAL, || false, || {
+        let done = size_of(&target).min(total);
+        let (detail, fraction) = transfer_detail(done, total, started);
+        report(format!("Copying {name} to the PC"), detail, fraction);
+    });
+
+    let output = child.wait_with_output().map_err(|e| format!("{name}: {e}"))?;
+    if !output.status.success() {
+        return Err(transfer_error(&name, &output));
+    }
     Ok(dest.to_string_lossy().into_owned())
 }
 
@@ -324,6 +344,33 @@ pub fn save_last(path: &str) {
         let _ = std::fs::create_dir_all(dir);
     }
     let _ = std::fs::write(file, path);
+}
+
+// --- Pinned folders ----------------------------------------------------------------------------
+
+/// Shell script that prints one line per path: `1` if it is a folder on the Thor, else `0`.
+fn dirs_exist_script(paths: &[String]) -> String {
+    paths.iter().map(|path| format!("[ -d {} ] && echo 1 || echo 0\n", shell_quote(path))).collect()
+}
+
+/// Reads the answer of `dirs_exist_script`. `None` if it doesn't have one line per path
+/// (adb failed halfway, Thor unplugged).
+fn parse_dirs_exist(output: &str, count: usize) -> Option<Vec<bool>> {
+    let found: Vec<bool> = output.lines().map(str::trim).filter(|line| !line.is_empty()).map(|line| line == "1").collect();
+    (found.len() == count).then_some(found)
+}
+
+/// Which of `paths` are existing folders on the Thor (for pinned folders, see `settings::Pin`).
+/// One adb call for all of them. Fails if the Thor can't be asked.
+pub fn dirs_exist(paths: &[String]) -> Result<Vec<bool>, String> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let output = adb::sh_script(&dirs_exist_script(paths));
+    if !output.ok {
+        return Err(output.err_text());
+    }
+    parse_dirs_exist(&output.stdout, paths.len()).ok_or_else(|| "Couldn't check the pinned folders on the Thor".to_string())
 }
 
 // --- Copying PC -> Thor ------------------------------------------------------------------------
@@ -357,6 +404,11 @@ pub struct Progress {
     pub cancellable: bool,
     /// A job was cancelled (on the event right after the cancel, and on the final summary).
     pub cancelled: bool,
+    /// Copy queue only: position of the running job in this batch (1-based) and the size of the
+    /// batch so far (it grows when more jobs are queued meanwhile). Both 0 for other transfers.
+    /// The UI shows them as "file X of Y".
+    pub index: u32,
+    pub count: u32,
 }
 
 /// One copy job from the UI.
@@ -451,6 +503,10 @@ fn is_cancelled(queue: &SharedQueue) -> bool {
     queue.lock().unwrap().cancel
 }
 
+/// Position of the running copy queue job in its batch and the batch size so far (see
+/// `Progress::index`). Only the worker thread writes it, and there is at most one worker.
+static QUEUE_POSITION: Mutex<(u32, u32)> = Mutex::new((0, 0));
+
 /// Sends a progress event to the UI. A failed emit (e.g. window closed) is ignored.
 fn emit_progress(app: &AppHandle, progress: Progress) {
     let _ = app.emit(TRANSFER_EVENT, progress);
@@ -458,11 +514,12 @@ fn emit_progress(app: &AppHandle, progress: Progress) {
 
 /// Sends a "still working" progress event for a copy queue job (can be cancelled).
 fn report_busy(app: &AppHandle, text: String, detail: String, fraction: f64) {
-    emit_progress(app, busy_progress(text, detail, fraction, true));
+    let (index, count) = *QUEUE_POSITION.lock().unwrap();
+    emit_progress(app, Progress { index, count, ..busy_progress(text, detail, fraction, true) });
 }
 
 fn busy_progress(text: String, detail: String, fraction: f64, cancellable: bool) -> Progress {
-    Progress { busy: true, text, detail, fraction, dests: vec![], error: None, cancellable, cancelled: false }
+    Progress { busy: true, text, detail, fraction, dests: vec![], error: None, cancellable, cancelled: false, index: 0, count: 0 }
 }
 
 /// Sends the "this job was cancelled" event. The worker may continue with the next job.
@@ -473,7 +530,7 @@ fn report_cancelled(app: &AppHandle, text: String, detail: String) {
 /// Sends the final "done" / "failed" / "cancelled" event.
 fn report_finished(app: &AppHandle, text: String, dests: Vec<String>, error: Option<String>, cancelled: bool) {
     let detail = String::new();
-    emit_progress(app, Progress { busy: false, text, detail, fraction: 1.0, dests, error, cancellable: false, cancelled });
+    emit_progress(app, Progress { busy: false, text, detail, fraction: 1.0, dests, error, cancellable: false, cancelled, index: 0, count: 0 });
 }
 
 /// Does a file/folder exist on the Thor?
@@ -848,9 +905,12 @@ fn worker(app: AppHandle, queue: SharedQueue) {
     let (mut copied, mut failed, mut cancelled) = (0u32, 0u32, 0u32);
     let mut dests: BTreeSet<String> = BTreeSet::new();
     let mut last_error = None;
+    let mut started = 0u32;
     loop {
         let (job, waiting) = next_job(&queue);
         let Some(job) = job else { break };
+        started += 1;
+        *QUEUE_POSITION.lock().unwrap() = (started, started + waiting as u32);
         dests.insert(job.dest.clone());
         let more = if waiting > 0 { format!(" · {waiting} more waiting") } else { String::new() };
         let (count, result) = if job.thor_copy {
@@ -881,6 +941,7 @@ fn worker(app: AppHandle, queue: SharedQueue) {
             }
         }
     }
+    *QUEUE_POSITION.lock().unwrap() = (0, 0);
     trigger_media_scan(&dests);
     let text = summary_text(copied, failed, cancelled, &dests);
     report_finished(&app, text, dests.into_iter().collect(), last_error, cancelled > 0);
@@ -1043,6 +1104,15 @@ fn pull_with_progress(app: &AppHandle, src: &str, name: &str, part: &Path) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pinned_folder_check_script_and_answer() {
+        let paths = vec!["/sdcard/Pictures".to_string(), "/sdcard/it's here".to_string()];
+        assert_eq!(dirs_exist_script(&paths), "[ -d /sdcard/Pictures ] && echo 1 || echo 0\n[ -d '/sdcard/it'\\''s here' ] && echo 1 || echo 0\n");
+        assert_eq!(parse_dirs_exist("1\r\n0\r\n", 2), Some(vec![true, false]));
+        assert_eq!(parse_dirs_exist("1\n", 2), None, "a short answer is not taken as 'not found'");
+        assert_eq!(dirs_exist(&[]), Ok(vec![]), "no pins: no adb call");
+    }
 
     #[test]
     fn case_only_rename_is_detected() {
