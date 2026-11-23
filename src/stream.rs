@@ -207,9 +207,12 @@ fn scrcpy() -> Option<PathBuf> {
 fn scrcpy_command(args: &[String]) -> Result<Command, String> {
     let exe = scrcpy().ok_or(SCRCPY_MISSING)?;
     let mut command = crate::adb::cmd(exe);
+
+    // Do not leak AppImage library paths into host scrcpy.
     command
+        .env_remove("LD_LIBRARY_PATH")
+        .env_remove("LD_PRELOAD")
         .args(args)
-        // scrcpy should use the same adb as ThorBro (two different adb versions fight each other).
         .env("ADB", crate::adb::adb_path())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
