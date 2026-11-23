@@ -4,6 +4,11 @@ Runs the real `ui/index.html` and `ui/js/*` in headless Firefox with a fake Taur
 (`stub.js`: in-memory Thor file system, adjustable adb latency, injectable failures) and checks
 the file manager's behavior (`tests.js`): cache, request ordering, virtualization, keyed updates,
 selection, rename/new folder/move/delete with rollback, cut/copy/paste, context menu, drag & drop.
+The file pool in the sidebar (empty/filled states, dropping only collects, "in pool" tags, "Copy to PC…" and Clear, count and size,
+duplicates and nested paths), the toolbar, back/forward history and the path bar, both context menus, Ctrl+O / "Add files …" /
+"Add folder …", the drop card for files dragged in from the PC, the "are you sure?" check for large amounts (direct drops, paste,
+"Copy to PC…"; size, item count, unknown size), the Cancel button of the strip, that rows can't be dragged out of the window,
+and `user-select` / `selectstart`.
 For the stream tab (fake scrcpy in `stub.js`): the three mirror tiles (both / top / bottom),
 failures under the status (toasted once) and Stop. Also: the transfer strip (events, "file X of Y", Copy to PC),
 the keyboard shortcuts panel and that shortcuts don't fire while typing.
@@ -12,6 +17,12 @@ opening from the sidebar and the Start tab, "not found" (folder gone or Thor not
 For the "Stream PC games" sub-tab and Help (fake Sunshine/Moonlight in `stub.js`): status chips, Help sections, login save/reject,
 pairing with and without `pairing_id`, game list, "Play on Thor" with the experimental display id, stream profile,
 "Send to Thor app" (sent / note / app not installed / too large).
+The header and the launch page (Update 6): every launch opens Start and no tab is stored, the shared header
+(wordmark, three ThorBros, pill and status ThorBro) on every tab, connected and not connected looks, the live switch
+on the regular 3 s poll when the fake Thor (`HARNESS.device` in `stub.js`) is unplugged and plugged in again, and the
+"No Thor connected" card that replaces the file list. After `tests.js`, `run.mjs` resizes the window from 1440 x 900
+down to the minimum 520 x 480 and checks that the header fits (no sideways overflow, about 150 px or less, the Files
+list keeps its room where it had room before).
 
 ```sh
 node tests/ui/run.mjs           # needs node >= 22 and firefox

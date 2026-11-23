@@ -53,7 +53,7 @@
 
   /* Type: one family for everything */
   --font: "JetBrains Mono", ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace;
-  --fs-wordmark: 28px;
+  --fs-wordmark: 62px;                    /* header wordmark (Update 6) */
   --fs-hero: 46px;
   --fs-section: 30px;
   --fs-tile: 30px;
@@ -118,7 +118,12 @@
   --content-max: 1344px;
   --side-w: 270px;
   --control-h: 46px;
-  --logo-h: 56px;
+  /* Header (Update 6): wordmark with three ThorBros, status ThorBro next to the pill */
+  --bro-s: 82px;                          /* sage and coral ThorBro */
+  --bro-l: 90px;                          /* orange ThorBro in the middle */
+  --status-mascot: 124px;
+  --tab-pad-x: 20px;
+  --gap-header: 24px;
   --gap-files: 16px;
 
   color-scheme: dark;
@@ -127,7 +132,16 @@
 @media (max-width: 1100px) { :root { --pad-y: 22px; --pad-x: 28px; --side-w: 240px; } }
 @media (max-width: 700px)  { :root { --pad-y: 16px; --pad-x: 16px; --fs-hero: 34px; --fs-section: 24px; } }
 /* Short windows (the app opens at 980 x 760): less air, so the file list keeps its rows. */
-@media (max-height: 820px) { :root { --pad-y: 16px; --logo-h: 44px; --gap-files: 12px; } }
+@media (max-height: 820px) { :root { --pad-y: 16px; --gap-files: 12px; } }
+/* Header sizes. Full size (wordmark 62 px, ThorBros 82 / 90 / 82 px, status ThorBro 124 px) where it
+   fits in one row; smaller in the default 980 px wide window, and smaller still in short or
+   narrow windows, so the pages below keep their room. */
+@media (max-width: 1180px) {
+  :root { --fs-wordmark: 52px; --bro-s: 69px; --bro-l: 76px; --status-mascot: 96px; --tab-pad-x: 12px; --gap-header: 10px; }
+}
+@media (max-height: 620px), (max-width: 760px) {
+  :root { --fs-wordmark: 40px; --bro-s: 54px; --bro-l: 60px; --status-mascot: 76px; --tab-pad-x: 14px; --gap-header: 12px; }
+}
 
 /* ------------------------------------------------------------------ Base */
 * { box-sizing: border-box; }
@@ -139,7 +153,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  user-select: none;
+  -webkit-user-select: none; user-select: none;
   scrollbar-color: var(--ink-divider) transparent;
 }
 h1 { font-size: var(--fs-section); font-weight: 700; line-height: 1.15; margin: 0 0 6px; letter-spacing: -0.01em; }
@@ -151,7 +165,16 @@ code { font: inherit; background: var(--ink-tint); padding: 0 5px; border-radius
 .label { font-size: var(--fs-small); font-weight: 500; color: var(--mute); }
 .hidden { display: none !important; }
 kbd { font: 500 11px var(--font); opacity: .6; margin-left: 6px; }
-.mono { font-family: var(--font); font-size: 12px; word-break: break-all; user-select: text; }
+.mono { font-family: var(--font); font-size: 12px; word-break: break-all; -webkit-user-select: text; user-select: text; }
+
+/* No text selection on the app itself: pressing and dragging on rows, tiles, toolbars or panels must
+   never highlight text. Listed explicitly (not only on body) so a parent that opts back in for its
+   own text can't switch it on for these. The -webkit- form is the one older WebKit (WebKitGTK,
+   macOS) understands. Text fields and the few places that show text to copy opt back in below. */
+.row, .row-grid, .list, .list-head, .tile, .tiles, .toolbar, .files-hint, .side, .pool, .xfer, .ctx, .modal, .drag-ghost, .drop-card, .crumbs, button, select, label {
+  -webkit-user-select: none; user-select: none;
+}
+input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
 
 /* ------------------------------------------------------------------ Controls */
 button, select, input, textarea { font: inherit; color: inherit; }
@@ -195,7 +218,7 @@ select, input[type=text], input[type=password], input[type=number], textarea {
   padding: 8px 12px;
   min-width: 0;
 }
-input[type=text] { user-select: text; width: 100%; }
+input[type=text] { -webkit-user-select: text; user-select: text; width: 100%; }
 input[type=checkbox], input[type=radio] { accent-color: var(--sage); }
 select:focus-visible, input:focus-visible, textarea:focus-visible, button:focus-visible {
   outline: var(--line) solid var(--orange); outline-offset: 2px;
@@ -205,33 +228,57 @@ select:focus, input:focus { outline: var(--line) solid var(--orange); outline-of
 /* ------------------------------------------------------------------ Header (all tabs) */
 .topbar {
   width: 100%; max-width: calc(var(--content-max) + 2 * var(--pad-x)); margin: 0 auto;
-  padding: var(--pad-y) var(--pad-x) calc(var(--pad-y) - 4px);
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 10px var(--pad-x) 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--gap-header);
 }
-.brand { display: flex; align-items: center; gap: 12px; }
-.brand-logo { width: var(--logo-h); height: var(--logo-h); display: block; }
-.brand-name { font-weight: 700; font-size: var(--fs-wordmark); letter-spacing: -0.01em; }
-.tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.brand { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; }
+/* The bros stand in front of the wordmark with their feet near the top edge of the letters
+   (the SVGs have about 11 % empty space under the feet, hence the overlap). */
+.brand-bros {
+  order: -1; position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: center;
+  margin-bottom: calc(var(--fs-wordmark) * -0.36);
+}
+.bro { display: block; opacity: .9; }
+.bro + .bro { margin-left: calc(var(--bro-s) * -0.26); }
+.bro-sage   { width: var(--bro-s); height: var(--bro-s); transform: rotate(-5deg); }
+.bro-orange { width: var(--bro-l); height: var(--bro-l); transform: rotate(3deg); }
+.bro-coral  { width: var(--bro-s); height: var(--bro-s); transform: rotate(-2deg); }
+.brand-word {
+  font-weight: 700; font-size: var(--fs-wordmark); line-height: 1; letter-spacing: -0.02em;
+  opacity: .72; white-space: nowrap;
+}
+.tabs { flex: none; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .tab {
-  padding: 9px 20px; border: var(--line) solid transparent; border-radius: var(--r-tab-plain);
+  padding: 9px var(--tab-pad-x); border: var(--line) solid transparent; border-radius: var(--r-tab-plain);
   background: transparent; font-size: 16px; font-weight: 500; color: var(--ink);
 }
 .tab:hover:not(:disabled) { background: var(--ink-tint); transform: none; }
 .tab.active, .tab.active:hover:not(:disabled) {
-  padding: 9px 22px; border-color: var(--ink); border-radius: var(--r-tab);
+  padding: 9px calc(var(--tab-pad-x) + 2px); border-color: var(--ink); border-radius: var(--r-tab);
   background: var(--orange); color: var(--on-color); font-weight: 600;
   box-shadow: var(--shadow-orange); transform: rotate(var(--tilt-tab));
 }
+.status { flex: 0 1 auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+/* Phone-narrow windows: wordmark and status in the first row, the nav centered in a second one. */
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; row-gap: 2px; padding-top: 6px; }
+  .tabs { order: 1; flex-basis: 100%; justify-content: center; }
+  .status { flex: 1 1 0; } /* stays next to the wordmark; the pill text shortens with "…" */
+}
 .device {
-  display: inline-flex; align-items: center; gap: 10px;
-  padding: 9px 18px; border: var(--line) solid var(--ink-soft); border-radius: var(--r-chip);
-  font-weight: 500; font-size: var(--fs-button);
-  max-width: 45%; overflow: hidden; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 9px 18px; border: var(--line) dashed var(--ink-divider); border-radius: var(--r-chip);
+  font-weight: 500; font-size: var(--fs-button); color: var(--mute);
+  overflow: hidden; white-space: nowrap;
 }
 .device:hover:not(:disabled) { background: var(--ink-tint); transform: none; }
-.device .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--orange); flex: none; }
-.device.on .dot { background: var(--sage); }
+/* Not connected: hollow grey dot. Connected: solid outline, green dot, normal text. */
+.device .dot { width: 10px; height: 10px; border-radius: 50%; border: var(--line) solid var(--mute); background: transparent; flex: none; }
+.device.on { border-style: solid; border-color: var(--ink-soft); color: var(--ink); }
+.device.on .dot { border-color: var(--sage); background: var(--sage); }
 #device-text { overflow: hidden; text-overflow: ellipsis; }
+.status-mascot { width: var(--status-mascot); height: var(--status-mascot); flex: none; display: block; transform: rotate(14deg); }
+.status.on .status-mascot { transform: none; }
 
 /* ------------------------------------------------------------------ Pages */
 .page {
@@ -304,9 +351,15 @@ select:focus, input:focus { outline: var(--line) solid var(--orange); outline-of
 .pin-chip .pin-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* ------------------------------------------------------------------ Files: layout and sidebar */
-#page-files { flex-direction: row; align-items: stretch; gap: 30px; overflow: hidden; }
+#page-files { flex-direction: row; align-items: stretch; gap: 30px; overflow: hidden; position: relative; }
+/* The sidebar: storages, pins and libraries scroll; the file pool below them always stays in view. */
 .side {
-  flex: 0 0 var(--side-w); min-height: 0; overflow-y: auto;
+  flex: 0 0 var(--side-w); min-height: 0;
+  display: flex; flex-direction: column; gap: 22px;
+}
+.side-scroll {
+  /* Gives way first when the window is short (shrinks 100x faster than the pool). */
+  flex: 0 100 auto; min-height: 90px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 26px;
   padding: 2px 8px 8px 0; /* room for the offset shadows */
   scrollbar-width: thin;
@@ -347,50 +400,51 @@ select:focus, input:focus { outline: var(--line) solid var(--orange); outline-of
 .side-pin:hover .pin-x, .side-pin:focus-within .pin-x { opacity: 1; }
 .pin-x:hover:not(:disabled) { background: var(--ink-tint); border-color: var(--ink-line); transform: none; }
 .files-main { flex: 999 1 560px; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--gap-files); }
-/* Narrow windows: the location drop-down replaces the sidebar. */
+/* Narrow windows: the location drop-down replaces storages, pins and libraries; the file pool
+   stays (it is the only way to copy to the PC), in a narrower column. */
 #place { display: none; }
 @media (max-width: 900px) {
-  .side { display: none; }
+  .side { flex-basis: 210px; }
+  .side-scroll { display: none; }
+  .pool-mascot { width: 44px; height: 44px; }
   #place { display: block; }
 }
 
 /* ------------------------------------------------------------------ Files: path bar and actions */
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
 #place { max-width: 260px; height: var(--control-h); }
-/* Pin button: outline icon, orange filled icon while the open folder is pinned. */
-button.icon.pin-btn { display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-icon-pin); }
-button.icon.pin-btn.on { color: var(--orange); }
-.crumbs {
+.toolbar { align-items: center; }
+.toolbar button.icon { display: inline-flex; align-items: center; justify-content: center; margin: 0; }
+.toolbar button.icon:disabled { opacity: .4; }
+/* Path bar: the segments, then the round pin button inside the bar. */
+.pathbar {
   flex: 1 1 300px; min-width: 0; height: var(--control-h);
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 6px 0 14px; background: var(--panel); border: var(--line) solid var(--ink-line); border-radius: var(--r-field);
+}
+/* Pin button: outline icon, orange filled icon while the open folder is pinned. */
+.pin-btn {
+  flex: none; width: 34px; height: 34px; padding: 0; margin: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; border-color: var(--ink-divider);
+}
+.pin-btn.on { color: var(--orange); }
+.crumbs {
+  flex: 1; min-width: 0; height: 100%;
   display: flex; gap: 2px; align-items: center;
   overflow: hidden; white-space: nowrap;
-  padding: 0 14px; background: var(--panel); border: var(--line) solid var(--ink-line); border-radius: var(--r-field);
   font-weight: 500; font-size: 16px;
 }
 .crumbs button { border: none; background: transparent; padding: 2px 5px; border-radius: 8px; font-size: inherit; font-weight: inherit; }
 .crumbs button:hover:not(:disabled) { background: var(--ink-tint); transform: none; }
-.crumbs button:last-child { color: var(--orange); font-weight: 600; }
+.crumbs button.here { color: var(--orange); font-weight: 600; }
 .crumbs .sep { color: var(--mute); }
 .crumbs button.drop { background: var(--sage-soft); box-shadow: inset 0 0 0 var(--line) var(--sage); }
 .toggle { display: flex; gap: 6px; align-items: center; font-size: var(--fs-small); color: var(--mute); white-space: nowrap; }
 
-.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.actions > button { padding: 10px 14px; }
-.actions > button:nth-of-type(4n+2) { border-radius: var(--r-btn-2); }
-.actions > button:nth-of-type(4n+3) { border-radius: var(--r-btn-3); }
-.actions > button:nth-of-type(4n)   { border-radius: var(--r-btn-4); }
-.actions > button.primary { padding: 10px 20px; border-radius: var(--r-cta); }
-.actions .divider { width: var(--line); height: 26px; margin: 0 2px; background: var(--ink-divider); }
-.toolbar-end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.more { position: relative; }
-.more > button { padding: 10px 14px; border-radius: var(--r-btn-2); }
-.more-pop {
-  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; min-width: 220px;
-  display: flex; flex-direction: column; gap: 2px; padding: 6px;
-  background: var(--panel); border: var(--line) solid var(--ink-line); border-radius: var(--r-3); box-shadow: var(--shadow-1);
-}
-.more-pop button { border-color: transparent; text-align: left; border-radius: var(--r-item); }
-.more-pop button:hover:not(:disabled) { background: var(--ink-tint); transform: none; }
+.toolbar .mkdir { margin: 0; padding: 10px 18px; border-radius: var(--r-btn-4); font-weight: 600; }
+.toolbar .keys-btn { margin: 0; }
+.files-hint { padding: 2px 6px; min-height: 22px; font-size: 14px; line-height: 1.5; color: var(--mute); }
 
 /* "?" keyboard shortcuts button and its panel */
 .keys { position: relative; }
@@ -452,6 +506,15 @@ button.icon.pin-btn.on { color: var(--orange); }
 .list { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; outline: none; contain: strict; }
 .list-sizer { position: relative; width: 100%; }
 .list-msg { position: absolute; inset: 0 0 auto 0; padding: 40px; text-align: center; color: var(--mute); pointer-events: none; }
+/* No Thor connected: the list panel becomes an empty card with one message (FilesClean5). */
+.list-wrap.offline .list-head, .list-wrap.offline .list { display: none; }
+.list-offline {
+  flex: 1; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  padding: 32px 28px; text-align: center;
+}
+.list-offline-title { font-weight: 700; font-size: 22px; }
+.list-offline-text { max-width: 460px; font-size: var(--fs-body); color: var(--body); }
 .list-wrap.loading::after {
   content: ""; position: absolute; left: 0; top: 0; width: 30%; height: 3px;
   background: var(--sage);
@@ -474,7 +537,11 @@ button.icon.pin-btn.on { color: var(--orange); }
 .row.drop { background: var(--sage-soft); box-shadow: inset 0 0 0 var(--line) var(--sage); }
 .row .ic { text-align: center; font-size: 12px; color: var(--sage); }
 .row.sel .ic { color: var(--on-color); }
-.row.ready .ic::after { content: "⇲"; }
+/* Rows in the file pool: dimmed, with a small orange "in pool" tag (FilesClean2). */
+.row.inpool:not(.sel) { color: var(--mute); }
+.row.inpool:not(.sel) .sz, .row.inpool:not(.sel) .dt { color: var(--mute); }
+.pool-tag { font-size: 12px; font-weight: 600; color: var(--orange); }
+.row.sel .pool-tag { color: var(--on-color); }
 .row .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row.dir .nm { font-weight: 600; }
 .row.dir .nm::after { content: "/"; }
@@ -729,7 +796,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .scr.bottom { width: 76px; height: 62px; }
 #mirror-state { flex: 1 1 240px; min-width: 0; }
 #mirror-state .mascot { width: 170px; height: 170px; }
-.stream-error { color: var(--danger); font-size: var(--fs-small); white-space: pre-wrap; user-select: text; }
+.stream-error { color: var(--danger); font-size: var(--fs-small); white-space: pre-wrap; -webkit-user-select: text; user-select: text; }
 
 /* ------------------------------------------------------------------ Help and details */
 .help-head { display: flex; flex-wrap: wrap; align-items: center; gap: 28px; }
@@ -766,12 +833,12 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .pc-body { display: flex; flex-direction: column; gap: 8px; }
 .pc-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .pc-row > .k { color: var(--mute); flex: 0 0 120px; }
-.pc-row > .v { flex: 1 1 200px; min-width: 0; user-select: text; overflow-wrap: anywhere; }
+.pc-row > .v { flex: 1 1 200px; min-width: 0; -webkit-user-select: text; user-select: text; overflow-wrap: anywhere; }
 .pc-badge { display: inline-block; padding: 1px 9px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600; background: var(--ink-tint); color: var(--mute); }
 .pc-badge.ok { background: var(--sage-soft); color: var(--sage); }
 .pc-badge.warn { background: var(--orange-soft); color: var(--orange); }
 .pc-badge.bad { background: var(--danger-soft); color: var(--danger); }
-.pc-addr { font-family: var(--font); user-select: text; }
+.pc-addr { font-family: var(--font); -webkit-user-select: text; user-select: text; }
 .pc-hint { font-size: var(--fs-small); color: var(--mute); white-space: pre-wrap; }
 .pc-hint.warn { color: var(--orange); }
 .pc-links { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -779,18 +846,18 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .pc-links button.primary { border-color: var(--ink); }
 .pc-links button:nth-child(even):not(.primary) { border-radius: var(--r-btn-2); }
 .pc-form { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; }
-.pc-form input[type=password] { width: 100%; user-select: text; }
+.pc-form input[type=password] { width: 100%; -webkit-user-select: text; user-select: text; }
 .pc-apps { display: flex; flex-direction: column; gap: 12px; }
 .pc-app {
   display: flex; gap: 16px; align-items: center; justify-content: space-between;
   padding: 12px 14px 12px 22px; border: var(--line) solid var(--ink-rule); border-radius: var(--r-chip-sm);
 }
 .pc-app:nth-child(even) { border-radius: var(--r-btn-2); }
-.pc-app .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-weight: 600; font-size: 19px; }
+.pc-app .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-user-select: text; user-select: text; font-weight: 600; font-size: 19px; }
 .pc-app .primary { padding: 11px 24px; font-weight: 700; }
 .pc-pin { font: 600 20px var(--font); letter-spacing: 6px; width: 120px !important; text-align: center; }
 .pc-profile-json {
-  width: 100%; font: 12px var(--font); user-select: text;
+  width: 100%; font: 12px var(--font); -webkit-user-select: text; user-select: text;
   background: var(--bg); color: var(--ink); border: var(--line) solid var(--ink-faint); border-radius: var(--r-btn-3); padding: 8px; resize: vertical;
 }
 
@@ -803,3 +870,56 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 }
 .toast.err { background: var(--danger); }
 @keyframes tin { from { opacity: 0; transform: translateY(6px); } }
+
+/* ------------------------------------------------------------------ File pool (js/pool.js) */
+/* Empty: dashed orange border, mascot "wait", intro and "Drop here". Filled: solid border, mascot
+   "ask", count + size, rows, "Copy to PC…" and "Clear pool" (FilesClean1/2). */
+.pool {
+  flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px;
+  padding: 16px; margin: 0 8px 8px 0;
+  background: var(--panel-raised); border: var(--line) dashed var(--orange); border-radius: var(--r-1);
+}
+.pool.is-filled { border-style: solid; box-shadow: 5px 5px 0 var(--orange-shadow); }
+.pool.drop { background: var(--orange-soft); box-shadow: inset 0 0 0 var(--line) var(--orange), var(--shadow-orange); }
+.pool-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pool-titles { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pool-title { font-weight: 700; font-size: 18px; }
+.pool-count { font-size: 12px; color: var(--mute); }
+.pool-count:empty { display: none; }
+.pool-mascot { width: 64px; height: 64px; flex: none; display: block; }
+.pool-hint { font-size: var(--fs-small); line-height: 1.55; color: var(--body); }
+.pool-foot .pool-hint { font-size: 12px; line-height: 1.5; }
+.pool-drop {
+  margin-top: 4px; padding: 18px 12px; text-align: center; font-size: 14px; color: var(--mute);
+  border: var(--line) dashed var(--ink-divider); border-radius: 14px;
+}
+.pool.drop .pool-drop { border-color: var(--orange); color: var(--orange); }
+.pool-items { flex: 0 1 auto; display: flex; flex-direction: column; gap: 8px; min-height: 96px; overflow-y: auto; scrollbar-width: thin; }
+.pool.is-empty .pool-items { display: none; }
+.pool-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; flex: none;
+  border: var(--line) solid var(--ink-rule); border-radius: var(--r-item);
+}
+.pool-item .nm { flex: 1; min-width: 0; font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pool-item .sz { font-size: 12px; color: var(--mute); white-space: nowrap; }
+.pool-item .x { width: 26px; height: 26px; flex: none; padding: 0; margin: 0; border-radius: 50%; border-color: var(--ink-rule); font-size: 13px; line-height: 1; }
+.pool-foot { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+.pool-foot > button { margin: 0; }
+.pool-foot > button.primary { padding: 12px 20px; font-weight: 700; }
+
+/* ------------------------------------------------------------------ Drop card (js/transfer.js) */
+/* Files dragged in from the PC: the list is dimmed and the card says where they go (FilesClean4). */
+.drop-card-wrap {
+  position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--backdrop);
+}
+.drop-card {
+  margin: 24px; padding: 34px 44px; max-width: calc(100% - 48px);
+  display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+  background: var(--panel); border: 3px dashed var(--orange); border-radius: var(--r-hero); box-shadow: var(--shadow-orange);
+}
+.drop-card img { width: 80px; height: 80px; display: block; }
+.drop-card-title { font-weight: 700; font-size: 22px; }
+.drop-card-info { font-size: 15px; color: var(--body); overflow-wrap: anywhere; }
+.drop-card-info b { color: var(--orange); font-weight: 600; }

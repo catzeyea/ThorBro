@@ -19,14 +19,17 @@ function enqueue(jobs) {
 
 // ---------------------------------------------------------------- Sending
 
-$("#btn-send-files").onclick = async () => {
+/** Ctrl+O and right-click "Add files …": file picker, then like a drop into the open folder. */
+async function pickFilesToSend() {
   const picked = await T.dialog.open({ multiple: true, title: "Files for the Thor" });
   if (picked) incoming([].concat(picked));
-};
-$("#btn-send-dirs").onclick = async () => {
+}
+
+/** Right-click "Add folder …": folder picker, then like a drop into the open folder. */
+async function pickFoldersToSend() {
   const picked = await T.dialog.open({ multiple: true, directory: true, title: "Folders for the Thor" });
   if (picked) incoming([].concat(picked));
-};
+}
 
 /**
  * Local paths that should go to the Thor. Games are sorted via the dialog, anything
@@ -156,14 +159,14 @@ function buildSortFoot(box, close, getRows) {
 // ---------------------------------------------------------------- Progress strip
 //
 // The strip at the bottom of the Files view shows the "transfer" events Rust emits while copying
-// (files.rs: copy queue, drag-out fetch, "Copy to PC"): mascot, what is being copied, "file X of Y",
+// (files.rs: the copy queue, incl. "Copy to PC…" from the file pool): mascot, what is being copied, "file X of Y",
 // percent, the bar and Cancel. A finished batch stays visible for a moment, then the strip hides.
 
 /** How long the "done" state of the strip stays visible (ms). */
 const TRANSFER_DONE_MS = 6000;
 
-/** Strip state. `pull`: { index, count } while "Copy to PC" runs (its events carry no position). */
-const STRIP = { pull: null, hideTimer: 0 };
+/** Strip state. */
+const STRIP = { hideTimer: 0 };
 
 /** Shows one progress event (files::Progress) on the strip. */
 function showTransfer(progress) {
@@ -177,10 +180,9 @@ function showTransfer(progress) {
   $("#p-text").textContent = progress.text;
   $("#p-detail").textContent = failed ? progress.error : progress.detail;
 
-  // "file X of Y": the copy queue sends its position; "Copy to PC" is counted in pullSelected.
-  const position = progress.count > 1 ? progress : (STRIP.pull && !progress.cancellable ? STRIP.pull : null);
+  // "file X of Y": the copy queue sends its position.
   const meta = [];
-  if (progress.busy && position && position.count > 1) meta.push(`file ${position.index} of ${position.count}`);
+  if (progress.busy && progress.count > 1) meta.push(`file ${progress.index} of ${progress.count}`);
   // fraction 0 while busy = unknown → animated bar at 30 %, no percent.
   const unknown = progress.busy && progress.fraction <= 0;
   if (progress.busy && !unknown) meta.push(`${Math.round(progress.fraction * 100)}%`);
@@ -194,19 +196,6 @@ function showTransfer(progress) {
 function hideTransfer() {
   clearTimeout(STRIP.hideTimer);
   $("#progress").classList.add("hidden");
-}
-
-/**
- * "Copy to PC" (files-actions.js) has no final event: it calls pullProgress() before each entry
- * and pullFinished(text) or pullFinished(null) afterwards (null = failed, the error is a toast).
- */
-function pullProgress(index, count) {
-  STRIP.pull = { index, count };
-}
-function pullFinished(text) {
-  STRIP.pull = null;
-  if (text) showTransfer({ busy: false, text, detail: "", fraction: 1, error: null, cancellable: false, count: 0 });
-  else hideTransfer();
 }
 
 // Emitted by files.rs (emit_progress) while copying / extracting / fetching.
@@ -229,13 +218,16 @@ async function onTransferFinished(progress) {
   }
   await refreshLibs(); // game counts changed
   if (progress.dests.length) renderFiles();
+  prunePool(); // pool.js: items that were moved away are no longer in the pool
 }
 
 /** Cancel button next to the progress bar (only shown for copy jobs, see Progress.cancellable). */
 $("#p-cancel").onclick = async () => {
   const choice = await dialog({
     title: "Cancel the transfer?",
-    body: "The copy that is running is stopped and its partial copy on the Thor removed. " +
+    body: "The copy that is running is stopped and its partial copy removed. Nothing is lost: " +
+      "an original is only removed after its copy was checked, so a cancelled move leaves it where it was. " +
+      "Items that were already finished stay finished. " +
       "If an archive is being fetched or extracted right now, it stops before uploading.",
     buttons: [["Keep copying", null, ""], ["Cancel this one, copy the rest", "one", ""], ["Cancel everything", "all", "danger solid"]],
     defaultValue: null,
@@ -249,22 +241,66 @@ $("#p-cancel").onclick = async () => {
 };
 
 // ---------------------------------------------------------------- Drag & drop onto the window
+//
+// Files dragged in from the PC: on the Files tab the list is dimmed and the drop card shows where
+// they go, how many and how big (DESIGN-UPDATE-5, FilesClean4). Elsewhere (Start tab, the saves
+// import dialog) the full-window overlay is used as before. Dropped files go into the open folder
+// (games through the "Where should it go?" dialog, see incoming).
+
+/** The open folder for the drop card: "ROMs / switch", or the storage name at its root. */
+function dropDestLabel() {
+  const parts = S.cwd.slice(S.root.length).split("/").filter(Boolean);
+  if (parts.length) return parts.join(" / ");
+  const place = S.places.find((p) => p.path === S.root);
+  return place ? place.label : S.cwd;
+}
+
+/** Counter so a slow size answer for an earlier drag doesn't overwrite a newer one. */
+let dropSizeSeq = 0;
+
+/** Shows the drop card for `paths` (count at once, total size once Rust has added it up). */
+function showDropCard(paths) {
+  $("#drop-card-dest").textContent = dropDestLabel();
+  const count = paths.length;
+  const what = count ? ` · ${count} ${count === 1 ? "item" : "items"}` : "";
+  $("#drop-card-what").textContent = what;
+  $("#list-wrap").classList.add("dropping");
+  $("#drop-card").classList.remove("hidden");
+  if (!count) return;
+  const seq = ++dropSizeSeq;
+  // → commands::local_sizes (walks the dropped folders on the PC)
+  invoke("local_sizes", { paths }).then((bytes) => {
+    if (seq === dropSizeSeq && !$("#drop-card").classList.contains("hidden")) $("#drop-card-what").textContent = `${what} · ${human(bytes)}`;
+  }).catch(() => {});
+}
+
+function hideDropCard() {
+  dropSizeSeq++;
+  $("#drop-card").classList.add("hidden");
+  $("#list-wrap").classList.remove("dropping");
+}
 
 T.webview.getCurrentWebview().onDragDropEvent((ev) => {
   const type = ev.payload.type;
   const overlay = $("#drop-overlay");
+  const onFiles = S.tab === "files" && !S.importTarget;
   if (type === "enter" || type === "over") {
-    // Ignore our own drag-out passing over the window.
-    if (DRAG.native || (ev.payload.paths || []).some((path) => FROM_DRAG_CACHE.test(path))) return;
     if (S.modalOpen && !S.importTarget) return;
+    if (onFiles) {
+      // "over" carries no paths: keep what "enter" showed.
+      if (type === "enter" || $("#drop-card").classList.contains("hidden")) showDropCard(ev.payload.paths || []);
+      return;
+    }
     overlay.classList.remove("hidden");
     $("#drop-overlay div").textContent = S.importTarget ? "Drop to import" : "Drop to send";
   } else if (type === "leave") {
     overlay.classList.add("hidden");
+    hideDropCard();
   } else if (type === "drop") {
     overlay.classList.add("hidden");
-    const paths = (ev.payload.paths || []).filter((path) => !FROM_DRAG_CACHE.test(path));
-    if (!paths.length) return; // our own drag came back into the window
+    hideDropCard();
+    const paths = ev.payload.paths || [];
+    if (!paths.length) return;
     if (S.importTarget) return S.importTarget(paths[0]);
     if (S.modalOpen) return;
     if (S.tab !== "files") showTab("files");

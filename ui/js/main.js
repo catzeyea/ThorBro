@@ -5,6 +5,8 @@
 const POLL_INTERVAL_MS = 3000;
 
 loadPins(); // pins.js (settings.json, no Thor needed)
+// Every launch lands on Start. The last used tab is deliberately not remembered.
+showTab("start");
 pollDevice(true);
 setInterval(() => pollDevice(false), POLL_INTERVAL_MS);
 setInterval(() => { if (S.tab === "stream") streamStatus(); }, POLL_INTERVAL_MS);

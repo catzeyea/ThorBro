@@ -18,8 +18,6 @@ use tauri::{AppHandle, Emitter, State};
 /// Event name for progress texts during save scans / imports (`ui/js/saves-*.js` show them in a dialog).
 const SAVE_STEP_EVENT: &str = "save-step";
 
-/// Event sent when a drag-out started by `drag_start` has ended (payload: dropped yes/no).
-const DRAG_DONE_EVENT: &str = "drag-done";
 
 /// Archives with more files than this are not suggested for extraction (probably not a game,
 /// e.g. Switch firmware full of `.nca` files).
@@ -252,81 +250,23 @@ pub async fn delete(path: String) -> CmdResult<()> {
     run_blocking(move || files::delete(&path)).await
 }
 
-/// Copies a Thor entry to `~/Downloads/thor` ("transfer" progress events while it runs). Returns that folder.
+/// Sizes in bytes of Thor files/folders (`null` = unknown), in the order of `paths`.
 #[tauri::command]
-pub async fn pull(app: AppHandle, path: String) -> CmdResult<String> {
-    run_blocking(move || files::pull(&app, &path)).await
+pub async fn remote_sizes(paths: Vec<String>) -> CmdResult<Vec<Option<u64>>> {
+    run_blocking(move || Ok(files::remote_sizes(&paths))).await
 }
 
-/// Fetches a Thor entry into the drag cache (first half of dragging a file out).
+/// Which of `paths` still exist on the Thor (one `true`/`false` per path).
 #[tauri::command]
-pub async fn drag_fetch(app: AppHandle, path: String) -> CmdResult<files::Fetched> {
-    run_blocking(move || files::drag_fetch(&app, &path)).await
+pub async fn paths_exist(paths: Vec<String>) -> CmdResult<Vec<bool>> {
+    run_blocking(move || files::paths_exist(&paths)).await
 }
 
-/// Linux: the `drag` crate builds the file:// URI without escaping, so spaces etc. are
-/// percent-encoded here.
-///
-/// `#[cfg(target_os = "linux")]` compiles this version only on Linux (like `#ifdef __linux__`);
-/// the version below is used everywhere else.
-#[cfg(target_os = "linux")]
-fn drag_path(path: &str) -> PathBuf {
-    let mut encoded = String::new();
-    for byte in path.bytes() {
-        if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
-            encoded.push(byte as char);
-        } else {
-            encoded.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    PathBuf::from(encoded)
-}
-#[cfg(not(target_os = "linux"))]
-fn drag_path(path: &str) -> PathBuf {
-    PathBuf::from(path)
-}
-
-/// Starts a real OS drag with local files (second half of dragging out; the mouse button
-/// must still be pressed). Emits `drag-done` when the drag ends.
-///
-/// The drag has to be started on the main (GUI) thread, hence `run_on_main_thread`.
+/// Total size in bytes of local files/folders (the drop card shows it while files are dragged
+/// in from the PC). Unreadable paths count as 0.
 #[tauri::command]
-pub fn drag_start(app: AppHandle, window: tauri::WebviewWindow, paths: Vec<String>) -> CmdResult<()> {
-    let items: Vec<PathBuf> = paths.iter().map(|path| drag_path(path)).collect();
-    let window_for_drag = window.clone();
-    window
-        .run_on_main_thread(move || start_os_drag(app, window_for_drag, items))
-        .map_err(|e| e.to_string())
-}
-
-/// Runs on the main thread: hands the files to the `drag` crate. Errors are only logged.
-fn start_os_drag(app: AppHandle, window: tauri::WebviewWindow, items: Vec<PathBuf>) {
-    // On Linux the drag crate needs the GTK window, elsewhere the Tauri window itself.
-    #[cfg(target_os = "linux")]
-    let handle = match window.gtk_window() {
-        Ok(handle) => handle,
-        Err(e) => return eprintln!("drag: {e}"),
-    };
-    #[cfg(not(target_os = "linux"))]
-    let handle = window.clone();
-
-    // `include_bytes!` embeds the file into the executable at compile time.
-    let icon = drag::Image::Raw(include_bytes!("../icons/32x32.png").to_vec());
-    let on_done = move |result: drag::DragResult, _| {
-        let _ = app.emit(DRAG_DONE_EVENT, matches!(result, drag::DragResult::Dropped));
-    };
-    let options = drag::Options { mode: drag::DragMode::Copy, ..Default::default() };
-    if let Err(e) = drag::start_drag(&handle, drag::DragItem::Files(items), icon, on_done, options) {
-        eprintln!("drag: {e}");
-    }
-}
-
-/// Opens `~/Downloads/thor` in the system file manager.
-#[tauri::command]
-pub fn open_pull_dir() -> CmdResult<()> {
-    let dir = files::pull_dir();
-    let _ = std::fs::create_dir_all(&dir);
-    util::open_in_os(&dir)
+pub async fn local_sizes(paths: Vec<String>) -> CmdResult<u64> {
+    run_blocking(move || Ok(paths.iter().map(|path| files::size_of(Path::new(path))).sum())).await
 }
 
 // --- Drop & sorting ----------------------------------------------------------------------------

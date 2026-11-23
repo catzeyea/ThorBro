@@ -1,4 +1,4 @@
-//! File manager for the Thor, the copy queue PC -> Thor, and dragging files out Thor -> PC.
+//! File manager for the Thor and the copy queue (PC -> Thor, inside the Thor, Thor -> PC).
 //!
 //! - File manager: list, create, rename, move, delete, pull (all via `adb shell` / `adb pull`).
 //!   Moving and deleting several entries is one adb call per batch (`move_paths`, `delete_paths`).
@@ -6,7 +6,7 @@
 //!   PC -> Thor uploads it also copies (or moves) inside the Thor, see `thor_copy_one`. Progress is
 //!   sent to the UI as `transfer` events (see `Progress`). The running job can be cancelled
 //!   (see `cancel`).
-//! - Drag out: a file is first fetched into a local cache, then `commands.rs` starts a real OS drag.
+//! - Thor -> PC only goes through the queue ("Copy to PC…" in the file pool, see `pull_one`).
 //!
 //! Called from the Tauri commands in `commands.rs`. Uses `adb.rs` for all Thor access and
 //! `unpack.rs` to extract archives before uploading them.
@@ -32,15 +32,12 @@ const MIN_DELETE_DEPTH: usize = 2;
 const PUSH_SLEEP: Duration = Duration::from_millis(150);
 const PUSH_POLL_INTERVAL: Duration = Duration::from_millis(700);
 
-/// While fetching for drag-out: same as above, a bit faster because local size is cheap to read.
+/// While saving to the PC: same as above, a bit faster because the local size is cheap to read.
 const FETCH_SLEEP: Duration = Duration::from_millis(100);
 const FETCH_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Minimum elapsed time used for speed calculations (avoids dividing by ~0 right at the start).
 const MIN_ELAPSED_SECS: f64 = 0.1;
-
-/// Cached drag-out files older than this are deleted on start-up.
-const DRAG_CACHE_MAX_AGE: Duration = Duration::from_secs(24 * 3600);
 
 /// The media scanner is triggered for at most this many new files per destination folder.
 const MEDIA_SCAN_LIMIT: u32 = 2000;
@@ -288,39 +285,47 @@ pub fn delete_paths(paths: &[String]) -> Vec<ItemResult> {
     run_batch(paths, steps)
 }
 
-/// Local folder for files copied from the Thor: `~/Downloads/thor`.
-pub fn pull_dir() -> PathBuf {
-    dirs::download_dir()
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Downloads"))
-        .join("thor")
+// --- Sizes and existence of Thor paths (for the file pool and large-transfer confirmations) ---
+
+/// Shell script that prints one line per path: its size in KiB (`du -sk`), or `-` if it can't be read.
+fn sizes_script(paths: &[String]) -> String {
+    paths
+        .iter()
+        .map(|path| format!("du -sk -- {} 2>/dev/null | cut -f1 | grep . || echo -\n", shell_quote(path)))
+        .collect()
 }
 
-/// Copies a file or folder from the Thor into `pull_dir()` ("Copy to PC"). Returns that folder's
-/// path. Sends "transfer" progress events while copying (not cancellable, no final event: the
-/// caller gets the result directly).
-pub fn pull(app: &AppHandle, src: &str) -> Result<String, String> {
-    let dest = pull_dir();
-    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-    let src = src.trim_end_matches('/');
-    let name = adb::posix_basename(src).to_string();
-    let total = remote_size(src).max(1);
-    let report = |text: String, detail: String, fraction: f64| emit_progress(app, busy_progress(text, detail, fraction, false));
-    report(format!("Copying {name} to the PC ({})", human(total)), format!("to {}", dest.display()), 0.0);
-    let mut child = spawn_adb(&["pull", src, &dest.to_string_lossy()]).map_err(|e| format!("{name}: {e}"))?;
-
-    let target = dest.join(&name);
-    let started = Instant::now();
-    wait_with_polling(&mut child, FETCH_SLEEP, FETCH_POLL_INTERVAL, || false, || {
-        let done = size_of(&target).min(total);
-        let (detail, fraction) = transfer_detail(done, total, started);
-        report(format!("Copying {name} to the PC"), detail, fraction);
-    });
-
-    let output = child.wait_with_output().map_err(|e| format!("{name}: {e}"))?;
-    if !output.status.success() {
-        return Err(transfer_error(&name, &output));
+/// Reads the answer of `sizes_script`: bytes per path, `None` where it is unknown. A short answer
+/// (adb failed halfway) makes every size unknown instead of shifting them onto the wrong paths.
+fn parse_sizes(output: &str, count: usize) -> Vec<Option<u64>> {
+    let lines: Vec<&str> = output.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
+    if lines.len() != count {
+        return vec![None; count];
     }
-    Ok(dest.to_string_lossy().into_owned())
+    lines.iter().map(|line| line.parse::<u64>().ok().map(|kib| kib * 1024)).collect()
+}
+
+/// Sizes of Thor files/folders in bytes (rounded to KiB), `None` if unknown. One adb call.
+pub fn remote_sizes(paths: &[String]) -> Vec<Option<u64>> {
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    let output = adb::sh_script(&sizes_script(paths));
+    parse_sizes(&output.stdout, paths.len())
+}
+
+/// Which of `paths` still exist on the Thor (files or folders). One adb call. Fails if the Thor
+/// can't be asked, so the caller doesn't mistake "unplugged" for "everything is gone".
+pub fn paths_exist(paths: &[String]) -> Result<Vec<bool>, String> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let script: String = paths.iter().map(|path| format!("[ -e {} ] && echo 1 || echo 0\n", shell_quote(path))).collect();
+    let output = adb::sh_script(&script);
+    if !output.ok {
+        return Err(output.err_text());
+    }
+    parse_dirs_exist(&output.stdout, paths.len()).ok_or_else(|| "Couldn't check the paths on the Thor".to_string())
 }
 
 // --- Last opened folder ------------------------------------------------------------------------
@@ -400,7 +405,7 @@ pub struct Progress {
     /// Destination folders of the finished batch (so the UI can reload them).
     pub dests: Vec<String>,
     pub error: Option<String>,
-    /// The UI may offer "Cancel" (only for copy queue jobs, not for drag-out fetches).
+    /// The UI may offer "Cancel" (copy queue jobs, except steps that can't be interrupted).
     pub cancellable: bool,
     /// A job was cancelled (on the event right after the cancel, and on the final summary).
     pub cancelled: bool,
@@ -417,11 +422,12 @@ pub struct Progress {
 /// - `flatten`: skip a single wrapper folder inside the archive (for games).
 /// - `remote`: `src` is on the Thor (it is fetched, extracted on the PC and pushed back).
 /// - `thor_copy`: `src` and `dest` are both on the Thor; copied with `cp -r` on the device.
-/// - `move_after`: with `thor_copy`, delete `src` after a successful copy (a move across storages).
+/// - `move_after`: with `thor_copy`, delete `src` after the copy was verified (a move across storages).
+/// - `pull`: "Save to PC": `src` is on the Thor, `dest` is a folder on the PC (see `pull_one`).
 ///
 /// `Deserialize` generates the code that builds this struct from the JSON sent by `ui/js/transfer.js`.
 /// `#[serde(default)]` means: if the field is missing in the JSON, use `false`.
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Default)]
 pub struct Job {
     pub src: String,
     pub dest: String,
@@ -435,6 +441,8 @@ pub struct Job {
     pub thor_copy: bool,
     #[serde(default)]
     pub move_after: bool,
+    #[serde(default)]
+    pub pull: bool,
 }
 
 /// Waiting jobs plus a flag whether a worker thread is currently running.
@@ -881,9 +889,141 @@ fn thor_copy_one(app: &AppHandle, queue: &SharedQueue, job: &Job, more: &str) ->
         Err(e) => return Err(JobError::Failed(format!("{name}: {e}"))),
     }
     if job.move_after {
-        delete(src).map_err(|e| format!("{name} was copied to {dest}, but the original couldn't be removed: {e}"))?;
+        remove_source_after_move(app, queue, src, &target, &target_name, dest, more)?;
     }
     Ok(())
+}
+
+// --- Safe move: never delete a source before its copy is verified ------------------------------
+
+/// What a file or folder tree contains: regular files, their summed size and the number of
+/// folders (the folder itself included). Two trees with equal stats are taken as equal copies.
+#[derive(Debug, PartialEq, Clone, Copy)]
+struct TreeStats {
+    files: u64,
+    bytes: u64,
+    dirs: u64,
+}
+
+/// Shell snippet that prints `"<files> <bytes> <dirs>"` for `path` (see `TreeStats`).
+/// `stat` runs once per batch of files (`-exec … +`), not once per file.
+fn tree_stats_script(path: &str) -> String {
+    let p = shell_quote(path);
+    format!(
+        "f=$(find {p} -type f -exec stat -c %s {{}} + 2>/dev/null | {{ c=0; t=0; while read -r n; do c=$((c+1)); t=$((t+n)); done; echo \"$c $t\"; }}); \
+         d=$(find {p} -type d 2>/dev/null | wc -l); echo \"$f $d\""
+    )
+}
+
+/// Reads the output of `tree_stats_script`. `None` if it isn't three numbers, or if it describes
+/// nothing at all (an existing path has at least one file or folder, so 0 / 0 means "couldn't look").
+fn parse_tree_stats(output: &str) -> Option<TreeStats> {
+    let numbers: Vec<u64> = output.split_whitespace().map(|word| word.parse().ok()).collect::<Option<_>>()?;
+    let [files, bytes, dirs] = numbers[..] else { return None };
+    (files > 0 || dirs > 0).then_some(TreeStats { files, bytes, dirs })
+}
+
+fn tree_stats(path: &str) -> Option<TreeStats> {
+    let output = sh(&tree_stats_script(path));
+    if output.ok { parse_tree_stats(&output.stdout) } else { None }
+}
+
+/// Why a finished copy is not good enough to delete its source. `None` = verified.
+fn verify_copy(source: Option<TreeStats>, copy: Option<TreeStats>) -> Option<String> {
+    match (source, copy) {
+        (Some(a), Some(b)) if a == b => None,
+        (Some(a), Some(b)) => Some(format!(
+            "the copy differs ({} files, {} instead of {} files, {})",
+            b.files, human(b.bytes), a.files, human(a.bytes)
+        )),
+        _ => Some("the copy couldn't be checked".into()),
+    }
+}
+
+/// Last step of a move across storages: deletes `src` once the copy at `target` is verified.
+///
+/// - Not verified: nothing is deleted, the user gets both and an error.
+/// - Cancelled while verifying: the new copy is removed again (it is ours: `thor_copy_one` refuses
+///   an existing target), the source stays.
+/// - Deleting the source can't be interrupted, so the strip stops offering "Cancel" meanwhile.
+fn remove_source_after_move(
+    app: &AppHandle,
+    queue: &SharedQueue,
+    src: &str,
+    target: &str,
+    target_name: &str,
+    dest: &str,
+    more: &str,
+) -> Result<(), JobError> {
+    emit_progress(app, busy_progress(format!("Checking the copy of {target_name}"), format!("before the original is removed{more}"), 0.0, true));
+    if let Some(problem) = verify_copy(tree_stats(src), tree_stats(target)) {
+        return Err(JobError::Failed(format!(
+            "{target_name}: {problem}. The original was NOT removed, check {target}"
+        )));
+    }
+    if is_cancelled(queue) {
+        return Err(JobError::Cancelled(clean_up_partial(target, target_name, false)));
+    }
+    emit_progress(app, busy_progress(format!("Removing the original of {target_name}"), format!("the copy in {dest} is verified{more}"), 0.0, false));
+    delete(src).map_err(|e| format!("{target_name} was copied to {dest}, but the original couldn't be removed: {e}"))?;
+    Ok(())
+}
+
+// --- Saving to the PC through the queue --------------------------------------------------------
+
+/// "Save to PC": copies one Thor file/folder into the PC folder `job.dest` with progress and cancel.
+///
+/// Never overwrites: if `<dest>/<name>` exists, the job fails. On cancel or failure the partial
+/// copy is removed (it is ours, because the target didn't exist before). The Thor is only read.
+fn pull_one(app: &AppHandle, queue: &SharedQueue, job: &Job, more: &str) -> Result<(), JobError> {
+    if is_cancelled(queue) {
+        return Err(JobError::Cancelled(String::new()));
+    }
+    let src = job.src.trim_end_matches('/');
+    let name = adb::posix_basename(src).to_string();
+    let dest = PathBuf::from(&job.dest);
+    let target = dest.join(&name);
+    if let Some(clash) = pull_clash(&dest, &name) {
+        return Err(JobError::Failed(clash));
+    }
+    if !remote_exists(src) {
+        return Err(JobError::Failed(format!("{name} doesn't exist on the Thor (anymore).")));
+    }
+    std::fs::create_dir_all(&dest).map_err(|e| format!("{name}: {e}"))?;
+    let total = remote_size(src).max(1);
+    report_busy(app, format!("Saving {name} to the PC ({})", human(total)), format!("to {}{more}", dest.display()), 0.0);
+    let mut child = spawn_adb(&["pull", src, &dest.to_string_lossy()]).map_err(|e| format!("{name}: {e}"))?;
+    let started = Instant::now();
+    let cancelled = wait_with_polling(&mut child, FETCH_SLEEP, FETCH_POLL_INTERVAL, || is_cancelled(queue), || {
+        let (detail, fraction) = transfer_detail(size_of(&target).min(total), total, started);
+        report_busy(app, format!("Saving {name} to the PC"), format!("{detail}{more}"), fraction);
+    });
+    if cancelled {
+        return Err(JobError::Cancelled(remove_local_partial(&target)));
+    }
+    match child.wait_with_output() {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => {
+            let error = transfer_error(&name, &output);
+            remove_local_partial(&target);
+            Err(JobError::Failed(error))
+        }
+        Err(e) => Err(JobError::Failed(format!("{name}: {e}"))),
+    }
+}
+
+/// Error text if `<dest>/<name>` already exists on the PC (adb pull would overwrite it silently).
+fn pull_clash(dest: &Path, name: &str) -> Option<String> {
+    dest.join(name).exists().then(|| format!("{name} already exists in {}", dest.display()))
+}
+
+/// Removes a half-saved local file/folder and says what happened.
+fn remove_local_partial(target: &Path) -> String {
+    let removed = if target.is_dir() { std::fs::remove_dir_all(target) } else if target.exists() { std::fs::remove_file(target) } else { Ok(()) };
+    match removed {
+        Ok(()) => "Partial copy removed, the original on the Thor is untouched".into(),
+        Err(e) => format!("Couldn't remove the partial copy {}: {e}", target.display()),
+    }
 }
 
 /// Takes the next job from the queue. Returns `(job, jobs still waiting)`.
@@ -904,6 +1044,7 @@ fn next_job(queue: &SharedQueue) -> (Option<Job>, usize) {
 fn worker(app: AppHandle, queue: SharedQueue) {
     let (mut copied, mut failed, mut cancelled) = (0u32, 0u32, 0u32);
     let mut dests: BTreeSet<String> = BTreeSet::new();
+    let mut pc_dests: BTreeSet<String> = BTreeSet::new();
     let mut last_error = None;
     let mut started = 0u32;
     loop {
@@ -911,9 +1052,15 @@ fn worker(app: AppHandle, queue: SharedQueue) {
         let Some(job) = job else { break };
         started += 1;
         *QUEUE_POSITION.lock().unwrap() = (started, started + waiting as u32);
-        dests.insert(job.dest.clone());
+        // A "Save to PC" destination is a PC folder: it's only shown in the summary.
+        if job.pull { pc_dests.insert(job.dest.clone()); } else { dests.insert(job.dest.clone()); }
         let more = if waiting > 0 { format!(" · {waiting} more waiting") } else { String::new() };
-        let (count, result) = if job.thor_copy {
+        let (count, result) = if job.pull {
+            match pull_one(&app, &queue, &job, &more) {
+                Ok(()) => (1, Ok(())),
+                Err(e) => (0, Err(e)),
+            }
+        } else if job.thor_copy {
             match thor_copy_one(&app, &queue, &job, &more) {
                 Ok(()) => (1, Ok(())),
                 Err(e) => (0, Err(e)),
@@ -936,14 +1083,15 @@ fn worker(app: AppHandle, queue: SharedQueue) {
             Err(JobError::Cancelled(note)) => {
                 cancelled += 1;
                 // `src` is a Thor path for remote jobs, a local (maybe Windows) path otherwise.
-                let name = if job.remote || job.thor_copy { adb::posix_basename(&job.src).to_string() } else { local_name(Path::new(&job.src)) };
+                let name = if job.remote || job.thor_copy || job.pull { adb::posix_basename(&job.src).to_string() } else { local_name(Path::new(&job.src)) };
                 report_cancelled(&app, format!("Cancelled {name}"), note);
             }
         }
     }
     *QUEUE_POSITION.lock().unwrap() = (0, 0);
     trigger_media_scan(&dests);
-    let text = summary_text(copied, failed, cancelled, &dests);
+    let all_dests: BTreeSet<String> = dests.union(&pc_dests).cloned().collect();
+    let text = summary_text(copied, failed, cancelled, &all_dests);
     report_finished(&app, text, dests.into_iter().collect(), last_error, cancelled > 0);
 }
 
@@ -959,14 +1107,15 @@ fn trigger_media_scan(dests: &BTreeSet<String>) {
     }
 }
 
-/// `"Done: 3 copied to /sdcard/ROMs/snes, 1 failed, 1 cancelled"`.
+/// `"Done: 3 copied to /sdcard/ROMs/snes, 1 failed"`; after a cancel `"Stopped: …, 1 cancelled"`.
 fn summary_text(copied: u32, failed: u32, cancelled: u32, dests: &BTreeSet<String>) -> String {
     let destination = if dests.len() == 1 {
         dests.iter().next().cloned().unwrap_or_default()
     } else {
         format!("{} folders", dests.len())
     };
-    let mut text = format!("Done: {copied} copied to {destination}");
+    let head = if cancelled > 0 { "Stopped" } else { "Done" };
+    let mut text = format!("{head}: {copied} copied to {destination}");
     if failed > 0 {
         text += &format!(", {failed} failed");
     }
@@ -976,129 +1125,16 @@ fn summary_text(copied: u32, failed: u32, cancelled: u32, dests: &BTreeSet<Strin
     text
 }
 
-// --- Dragging out Thor -> PC -------------------------------------------------------------------
-//
-// To drag a file out of the window, it must exist locally. It is fetched into the cache first
-// (~/.cache/thorbro/ziehen/<hash>/<name>), then `commands.rs` starts a real OS drag with that file.
-// Already fetched files are reused as long as they haven't changed on the Thor.
+// --- Leftover of the removed drag-out ----------------------------------------------------------
 
-/// Cache folder for drag-out files.
-pub fn drag_root() -> PathBuf {
-    dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("thorbro").join("ziehen")
-}
-
-/// True if the entry was last modified more than `max_age` ago (or its age is unknown).
-fn is_older_than(entry: &std::fs::DirEntry, max_age: Duration) -> bool {
-    let age = entry.metadata().and_then(|meta| meta.modified()).ok().and_then(|time| time.elapsed().ok());
-    age.is_none_or(|age| age > max_age)
-}
-
-/// Deletes old entries (older than a day) from the drag cache. Called once at start-up.
-pub fn drag_cleanup() {
-    let Ok(read_dir) = std::fs::read_dir(drag_root()) else { return };
-    for entry in read_dir.filter_map(Result::ok) {
-        if is_older_than(&entry, DRAG_CACHE_MAX_AGE) {
-            let path = entry.path();
-            let _ = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
-        }
+/// Deletes the cache the removed "drag out of the window" feature used
+/// (`~/.cache/thorbro/ziehen`, our own temporary copies of Thor files). Called once at start-up;
+/// does nothing when it isn't there. Can be removed again once old installs have run it.
+pub fn remove_legacy_drag_cache() {
+    let dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("thorbro").join("ziehen");
+    if dir.is_dir() {
+        let _ = std::fs::remove_dir_all(dir);
     }
-}
-
-/// Fingerprint of a file/folder on the Thor: modification time + size, e.g. `"1700000000|512"`.
-/// Empty if the path doesn't exist.
-fn remote_stamp(path: &str) -> String {
-    let output = sh(&format!(
-        "stat -c '%Y' -- {p} 2>/dev/null; du -sk -- {p} 2>/dev/null | cut -f1",
-        p = shell_quote(path)
-    ));
-    output.stdout.split_whitespace().collect::<Vec<_>>().join("|")
-}
-
-/// Result of `drag_fetch`, sent to the UI.
-#[derive(Serialize)]
-pub struct Fetched {
-    pub local: String,
-    /// `true` = had to be fetched from the Thor (took a while), `false` = was already cached.
-    pub fetched: bool,
-}
-
-/// Where one Thor path lives in the drag cache.
-struct CacheSlot {
-    /// `<root>/<hash>`: the finished download.
-    dir: PathBuf,
-    /// `<root>/<hash>.part`: download in progress (renamed to `dir` when complete).
-    part: PathBuf,
-    /// `<root>/<hash>.stamp`: the `remote_stamp` of the cached version.
-    stamp_file: PathBuf,
-    /// `<dir>/<name>`: the local file/folder handed to the OS drag.
-    local: PathBuf,
-}
-
-/// Cache paths for a Thor path. The hash keeps different Thor folders with equal names apart.
-fn cache_slot(src: &str, name: &str) -> CacheSlot {
-    use md5::{Digest, Md5};
-    let key = format!("{:x}", Md5::digest(src.as_bytes()));
-    let root = drag_root();
-    let dir = root.join(&key);
-    CacheSlot {
-        local: dir.join(name),
-        part: root.join(format!("{key}.part")),
-        stamp_file: root.join(format!("{key}.stamp")),
-        dir,
-    }
-}
-
-/// Fetches a file/folder from the Thor into the drag cache (with progress) and returns the
-/// local path. A cached copy is reused if the Thor version still has the same fingerprint.
-pub fn drag_fetch(app: &AppHandle, src: &str) -> Result<Fetched, String> {
-    let src = src.trim_end_matches('/');
-    let name = src.rsplit('/').next().filter(|n| !n.is_empty()).ok_or("Invalid path")?.to_string();
-    let slot = cache_slot(src, &name);
-    let stamp = remote_stamp(src);
-    if stamp.is_empty() {
-        return Err(format!("{name} doesn't exist on the Thor (anymore)."));
-    }
-    let cached_stamp = std::fs::read_to_string(&slot.stamp_file).ok();
-    if slot.local.exists() && cached_stamp.as_deref() == Some(stamp.as_str()) {
-        // Refresh the timestamp so `drag_cleanup` doesn't throw it away right away.
-        let _ = filetime::set_file_mtime(&slot.dir, filetime::FileTime::now());
-        return Ok(Fetched { local: slot.local.to_string_lossy().into_owned(), fetched: false });
-    }
-
-    let _ = std::fs::remove_dir_all(&slot.part);
-    let _ = std::fs::remove_dir_all(&slot.dir);
-    std::fs::create_dir_all(&slot.part).map_err(|e| e.to_string())?;
-    pull_with_progress(app, src, &name, &slot.part)?;
-
-    std::fs::rename(&slot.part, &slot.dir).map_err(|e| e.to_string())?;
-    let _ = std::fs::write(&slot.stamp_file, &stamp);
-    report_finished(app, format!("{name} is ready to drag out"), vec![], None, false);
-    Ok(Fetched { local: slot.local.to_string_lossy().into_owned(), fetched: true })
-}
-
-/// `adb pull src part/` with progress events. On failure the partial download is removed and a
-/// "couldn't be fetched" event is sent.
-fn pull_with_progress(app: &AppHandle, src: &str, name: &str, part: &Path) -> Result<(), String> {
-    let total = remote_size(src).max(1);
-    let report = |text: String, detail: String, fraction: f64| emit_progress(app, busy_progress(text, detail, fraction, false));
-    report(format!("Fetching {name} from the Thor ({})", human(total)), "to drag out".into(), 0.0);
-    let mut child = spawn_adb(&["pull", src, &part.to_string_lossy()]).map_err(|e| format!("{name}: {e}"))?;
-
-    let started = Instant::now();
-    wait_with_polling(&mut child, FETCH_SLEEP, FETCH_POLL_INTERVAL, || false, || {
-        let done = size_of(part).min(total);
-        let (detail, fraction) = transfer_detail(done, total, started);
-        report(format!("Fetching {name} from the Thor"), format!("{detail} · then drag it out"), fraction);
-    });
-
-    let output = child.wait_with_output().map_err(|e| format!("{name}: {e}"))?;
-    if !output.status.success() {
-        let error = transfer_error(name, &output);
-        let _ = std::fs::remove_dir_all(part);
-        report_finished(app, format!("{name} couldn't be fetched"), vec![], Some(error.clone()), false);
-        return Err(error);
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1171,6 +1207,70 @@ mod tests {
         assert_eq!(copy_name("game.iso", 3), "game (copy 3).iso");
         assert_eq!(copy_name("Roms", 1), "Roms (copy)");
         assert_eq!(copy_name(".nomedia", 2), ".nomedia (copy 2)");
+    }
+
+
+    #[test]
+    fn sizes_are_parsed_without_shifting() {
+        assert_eq!(parse_sizes("4\n-\n2048\n", 3), vec![Some(4096), None, Some(2_097_152)]);
+        assert_eq!(parse_sizes("4\n", 2), vec![None, None], "a short answer must not be shifted onto other paths");
+        assert!(sizes_script(&["/sdcard/a b".to_string()]).contains("'/sdcard/a b'"));
+        assert_eq!(remote_sizes(&[]), vec![]);
+        assert_eq!(paths_exist(&[]), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_copy_is_only_verified_when_it_matches() {
+        let tree = Some(TreeStats { files: 3, bytes: 300, dirs: 2 });
+        assert_eq!(verify_copy(tree, tree), None);
+        assert!(verify_copy(tree, Some(TreeStats { files: 2, bytes: 200, dirs: 2 })).unwrap().contains("differs"));
+        assert!(verify_copy(tree, Some(TreeStats { files: 3, bytes: 299, dirs: 2 })).is_some(), "one byte less is not a good copy");
+        assert!(verify_copy(tree, Some(TreeStats { files: 3, bytes: 300, dirs: 1 })).is_some(), "a missing empty folder counts");
+        assert!(verify_copy(tree, None).unwrap().contains("couldn't be checked"), "unknown = not verified");
+        assert!(verify_copy(None, tree).is_some());
+        assert!(verify_copy(None, None).is_some());
+    }
+
+    #[test]
+    fn tree_stats_output_is_parsed_strictly() {
+        assert_eq!(parse_tree_stats("3 300 2\n"), Some(TreeStats { files: 3, bytes: 300, dirs: 2 }));
+        assert_eq!(parse_tree_stats("0 0 1"), Some(TreeStats { files: 0, bytes: 0, dirs: 1 }), "an empty folder is a real result");
+        assert_eq!(parse_tree_stats("0 0 0"), None, "nothing found = couldn't look, never 'equal'");
+        assert_eq!(parse_tree_stats("3 300"), None);
+        assert_eq!(parse_tree_stats("a b c"), None);
+        assert_eq!(parse_tree_stats(""), None);
+        let script = tree_stats_script("/sdcard/it's here");
+        assert!(script.contains("'/sdcard/it'\\''s here'"), "{script}");
+    }
+
+    #[test]
+    fn a_partial_local_copy_is_removed_but_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("half");
+        std::fs::create_dir_all(folder.join("sub")).unwrap();
+        std::fs::write(folder.join("sub/a.bin"), b"x").unwrap();
+        let sibling = dir.path().join("other.txt");
+        std::fs::write(&sibling, b"keep").unwrap();
+        assert!(remove_local_partial(&folder).starts_with("Partial copy removed"));
+        assert!(!folder.exists() && sibling.exists());
+        assert!(remove_local_partial(&dir.path().join("never-created")).starts_with("Partial copy removed"));
+    }
+
+    #[test]
+    fn save_to_pc_refuses_to_overwrite() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("game.iso"), b"mine").unwrap();
+        let clash = pull_clash(dir.path(), "game.iso").expect("existing file must be refused");
+        assert!(clash.contains("already exists"), "{clash}");
+        assert_eq!(pull_clash(dir.path(), "other.iso"), None);
+        assert_eq!(std::fs::read(dir.path().join("game.iso")).unwrap(), b"mine");
+    }
+
+    #[test]
+    fn summary_says_when_a_cancel_stopped_the_batch() {
+        let one: BTreeSet<String> = ["/sdcard/a".to_string()].into();
+        assert_eq!(summary_text(2, 0, 0, &one), "Done: 2 copied to /sdcard/a");
+        assert_eq!(summary_text(1, 1, 1, &one), "Stopped: 1 copied to /sdcard/a, 1 failed, 1 cancelled");
     }
 
     #[test]
@@ -1273,6 +1373,40 @@ mod device_tests {
         assert_eq!(results[0].error, None);
         assert_eq!(results[1].error, None);
         assert_eq!(names(&sandbox.path("DEST")).len(), 2);
+    }
+
+
+    #[test]
+    #[ignore = "needs a Thor attached via adb"]
+    fn device_copy_verification_sees_missing_files_and_sizes() {
+        let sandbox = Sandbox::new("/sdcard");
+        let src = sandbox.path("src");
+        mkdir(&format!("{src}/sub")).unwrap();
+        touch(&format!("{src}/a.bin"), 10);
+        touch(&format!("{src}/sub/b.bin"), 20);
+        mkdir(&format!("{src}/empty")).unwrap();
+        let copy = sandbox.path("copy");
+        let out = adb::run(&["shell", &thor_copy_command(&src, &copy)]);
+        assert!(out.ok, "{}", out.err_text());
+        let stats = tree_stats(&src).expect("source stats");
+        assert_eq!((stats.files, stats.bytes), (2, 30), "{stats:?}");
+        assert_eq!(verify_copy(Some(stats), tree_stats(&copy)), None, "a finished copy must verify");
+        // Same size, one file fewer / one byte fewer / an empty folder fewer: each must fail.
+        assert!(sh(&format!("rm {}", shell_quote(&format!("{copy}/sub/b.bin")))).ok);
+        assert!(verify_copy(Some(stats), tree_stats(&copy)).is_some(), "missing file");
+        touch(&format!("{copy}/sub/b.bin"), 19);
+        assert!(verify_copy(Some(stats), tree_stats(&copy)).is_some(), "one byte short");
+        touch(&format!("{copy}/sub/b.bin"), 20);
+        assert_eq!(verify_copy(Some(stats), tree_stats(&copy)), None);
+        assert!(sh(&format!("rmdir {}", shell_quote(&format!("{copy}/empty")))).ok);
+        assert!(verify_copy(Some(stats), tree_stats(&copy)).is_some(), "missing empty folder");
+        // A single file, a missing path.
+        assert_eq!(tree_stats(&format!("{src}/a.bin")).map(|s| (s.files, s.bytes)), Some((1, 10)));
+        assert_eq!(tree_stats(&sandbox.path("nope")), None);
+        // Sizes and existence helpers.
+        let sizes = remote_sizes(&[src.clone(), sandbox.path("nope")]);
+        assert!(sizes[0].is_some() && sizes[1].is_none(), "{sizes:?}");
+        assert_eq!(paths_exist(&[src, sandbox.path("nope")]), Ok(vec![true, false]));
     }
 
     #[test]

@@ -18,7 +18,8 @@ function esdeTargetPath() {
   return selectedDir || S.cwd;
 }
 
-$("#btn-esde").onclick = async () => {
+/** "Import ES-DE info …" (right-click on empty list space inside a games folder). */
+async function importEsdeInfo() {
   if (!S.connected) return toast("Thor is not connected", true);
   const path = esdeTargetPath();
   const close = busyModal(`Looking at ${path} …`);
@@ -41,7 +42,7 @@ $("#btn-esde").onclick = async () => {
   }
   await loadPlaces(false); // new systems and renamed folders show up right away
   esdeResultDialog(results);
-};
+}
 
 /**
  * Preview: one row per folder with the proposed action. Resolves with the request for

@@ -32,7 +32,7 @@ fn main() {
     if !args.is_empty() {
         std::process::exit(cli::run(&args));
     }
-    files::drag_cleanup();
+    files::remove_legacy_drag_cache();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // Makes `AppState` available to every command as `State<'_, AppState>`.
@@ -59,10 +59,9 @@ fn main() {
             commands::make_dir,
             commands::rename,
             commands::delete,
-            commands::pull,
-            commands::open_pull_dir,
-            commands::drag_fetch,
-            commands::drag_start,
+            commands::remote_sizes,
+            commands::paths_exist,
+            commands::local_sizes,
             commands::classify,
             commands::enqueue,
             commands::cancel_transfer,

@@ -36,7 +36,7 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `commands.rs` | Alle `#[tauri::command]`-Funktionen, also das, was die UI aufrufen darf. Dünne Hüllen um die Module darunter. Enthält auch `AppState`. |
 | `cli.rs` | Kommandozeile: `thorbro stream / displays / list / status / pc / thor`. |
 | `adb.rs` | adb finden und aufrufen, Shell-Quoting (`shell_quote`), `run-as` für private App-Ordner, Gerätestatus, Speicherorte. |
-| `files.rs` | Dateimanager (auflisten, umbenennen, löschen, holen), Kopier-Warteschlange PC → Thor mit Fortschritt, Rausziehen Thor → PC über einen Cache. |
+| `files.rs` | Dateimanager (auflisten, umbenennen, löschen, Größen), Kopier-Warteschlange mit Fortschritt und Abbrechen: PC → Thor, innerhalb des Thor (geprüftes Verschieben), Thor → PC („Copy to PC…“ aus dem File Pool). |
 | `library.rs` | ES-DE-`ROMs`-Ordner finden und gedroppte Dateien einem System zuordnen (Switch-Title-ID, Header-Bytes, Dateiendung). |
 | `unpack.rs` | Archive entpacken (zip/7z/tar in Rust, sonst externes 7z/bsdtar/unrar), Dateinamen FAT-tauglich machen. |
 | `stream.rs` | Displays erkennen (`scrcpy --list-displays`), pro Display ein scrcpy-Fenster starten und beenden, festhalten, warum ein Stream fehlgeschlagen ist. |
@@ -61,18 +61,19 @@ Für die Bildschirmspiegelung startet es `scrcpy`.
 | `style.css` | Aussehen. |
 | `js/core.js` | Tauri-Zugriff (`T`, `invoke`), Helfer (`$`, `esc`, `el`, `human`), globaler Zustand `S`, `toast`, `call`. |
 | `js/dialogs.js` | Modale Dialoge: `modal`, `dialog`, `ask`, `busyModal`, `folderPicker`. |
-| `js/device.js` | Tabs und Geräteerkennung (`pollDevice`). |
+| `js/device.js` | Tabs, Geräteerkennung (`pollDevice`) und der Verbindungsstatus im Header (`renderDeviceStatus`: Status-Pille, ThorBro wach / schlafend). |
 | `js/files.js` | Dateimanager-Tab, Teil 1: Orte, Listing-Cache, virtualisierte Liste, Auswahl, Verlauf, Tastatur. |
-| `js/files-actions.js` | Dateimanager-Tab, Teil 2: Ausschneiden/Kopieren/Einfügen, Umbenennen in der Zeile, Verschieben, Löschen, Kontextmenü, Ziehen von Zeilen (in Ordner oder raus auf den PC). |
-| `js/transfer.js` | Senden an den Thor: Drag & Drop, Einsortier-Dialog, Kopier-Warteschlange, Fortschrittsleiste (zeigt die „transfer“-Events, auch „file X of Y“). |
+| `js/files-actions.js` | Dateimanager-Tab, Teil 2: Ausschneiden/Kopieren/Einfügen, Umbenennen in der Zeile, Verschieben, Löschen, Kontextmenüs, Ziehen von Zeilen (in Ordner oder in den File Pool). |
+| `js/transfer.js` | Senden an den Thor: Drag & Drop mit Drop-Karte, Ctrl+O / „Add files …“, Einsortier-Dialog, Kopier-Warteschlange, Fortschrittsleiste (zeigt die „transfer“-Events, auch „file X of Y“). |
+| `js/pool.js` | Der File Pool in der Seitenleiste (Thor-Dateien sammeln, „Copy to PC…“), die Rückfrage bei großen Mengen für Drops und Einfügen. |
 | `js/saves.js` | Spielkarten, Kartenmenü, Sync-Ablauf. |
 | `js/saves-setup.js` | Spiel hinzufügen (Suche, KI-Vorschlag, Prüfen). |
 | `js/saves-import.js` | Spielstand importieren. |
 | `js/stream.js` | Stream-Tab, Unter-Tab „Mirror Thor screens“: drei Kacheln (beide / oben / unten, feste IDs 0 und 4), Stopp, Fehler; die scrcpy-Display-Erkennung für die Bildschirmauswahl. |
 | `js/pcstream.js` | Stream-Tab, Unter-Tab „Stream PC games“ (Status-Chips, „Play on Thor“, „Send to Thor app“, Pairing) und die Help-Seite (Sunshine und Login, Adressen, Apps auf dem Thor, Bildschirmauswahl, Checkliste, Stream-Profil). |
 | `js/pins.js` | Angeheftete Thor-Ordner: Pin-Knopf in der Pfadleiste (Strg+D), Karte „pinned“ in der Ortsleiste, Zeile „pinned“ im Start-Tab, Zustand „not found“ (`pins`, `add_pin`, `remove_pin`, `pins_found`; gespeichert in `settings.json`). |
-| `js/start.js` | Start-Tab (Ablagefläche, Bibliotheks-Kacheln), die Ortsleiste des Dateimanagers, sein „More“-Menü und die Tastenkürzel-Liste. |
-| `js/main.js` | Start: erste Geräteabfrage und Timer. |
+| `js/start.js` | Start-Tab (Ablagefläche, Bibliotheks-Kacheln), die Ortsleiste des Dateimanagers, die Tastenkürzel-Liste. |
+| `js/main.js` | Start: öffnet Start (bei jedem Start, der letzte Tab wird nicht gemerkt), erste Geräteabfrage und Timer. |
 
 Die JS-Dateien sind klassische `<script>`-Dateien ohne `type="module"`. Sie teilen sich einen
 globalen Gültigkeitsbereich, so als wären sie hintereinander in eine Datei kopiert. Deshalb
@@ -153,7 +154,6 @@ T.event.listen("transfer", async ({ payload: progress }) => { /* Balken aktualis
 |---|---|---|---|
 | `transfer` | `files.rs` | `transfer.js` | Fortschritt beim Kopieren/Entpacken/Holen (`Progress`) |
 | `save-step` | `commands.rs` (`scan_game`, `do_import`) | `saves-setup.js`, `saves-import.js` | Statustext für den Spinner |
-| `drag-done` | `commands.rs` (`start_os_drag`) | `files.js` | `true`, wenn das Rausziehen mit einem Drop endete |
 
 Dazu kommt ein Event, das Tauri selbst liefert: `onDragDropEvent` meldet, wenn Dateien aus dem
 System auf das Fenster gezogen werden (`transfer.js`).
@@ -175,21 +175,22 @@ System auf das Fenster gezogen werden (`transfer.js`).
    - Status `device` → verbunden. Der Modellname kommt aus `adb shell getprop ro.product.model`.
 5. **Antwort.** Das Ergebnis `Device { connected, message }` wird zu JSON
    `{ "connected": true, "message": "AYN Thor" }`.
-6. **Anzeige.** `pollDevice` färbt den Punkt oben rechts und setzt den Text. Hat sich
-   `connected` geändert, folgt:
+6. **Anzeige.** `pollDevice` ruft bei jeder Antwort `renderDeviceStatus()` auf: Die Pille im
+   Header zeigt „Connected: <Modell>“ oder „Not connected“ (der Grund aus Schritt 4 steht im
+   Tooltip), der ThorBro daneben ist wach (`thorbro-done.svg`) oder schläft (`thorbro-wait-off.svg`).
+   Hat sich `connected` geändert, folgt:
    - verbunden: `loadPlaces(true)` → `invoke("places")` → `commands::places` → `adb::storages()`
      (interner Speicher und SD-Karten) und `library::find_libraries()` (ein Shell-Script pro
      Speicher liest alle `ROMs/*/systeminfo.txt`). Die Libraries landen in `AppState.libs` und
      in `S.libs`. Danach öffnet der Dateimanager den zuletzt benutzten Ordner.
-   - getrennt: Die Dateiliste zeigt „No Thor connected“.
+   - getrennt: Statt der Dateiliste erscheint die Karte „No Thor connected“.
    - Im Saves-Tab werden zusätzlich die Spielkarten neu geprüft.
 
 ## Beispiel 2: Spiel per Drop einsortieren
 
 1. **Drop.** Der Benutzer zieht z. B. `Zelda [0100F2C0115B6000].nsp` auf das Fenster. Tauri ruft
    den `onDragDropEvent`-Handler in `ui/js/transfer.js` mit `type: "drop"` und den lokalen Pfaden auf.
-2. **Filtern.** Pfade aus dem eigenen Zieh-Cache werden ignoriert (das wäre ein eigener Drag, der
-   zurück ins Fenster kommt). Ist der Import-Dialog offen, geht der Pfad dorthin
+2. **Weiterleiten.** Ist der Import-Dialog offen, geht der Pfad dorthin
    (`S.importTarget`). Sonst wird `incoming(paths)` aufgerufen.
 3. **Klassifizieren.** `incoming` ruft `invoke("classify", { paths, cwd, lib: 0, force: false })` auf.
 4. **Command.** `commands::classify` nimmt die Library aus `AppState.libs` und baut für jeden Pfad mit

@@ -20,6 +20,61 @@
   const typeInto = (input, value, finalKey = "Enter") => { input.value = value; input.dispatchEvent(new KeyboardEvent("keydown", { key: finalKey, bubbles: true })); };
 
   try {
+    // ---- launch page (Update 6): every launch lands on Start, the last tab is not remembered
+    const activePages = () => [...document.querySelectorAll(".page.active")].map((p) => p.id);
+    const activeTabs = () => [...document.querySelectorAll(".tab.active")].map((b) => b.dataset.tab);
+    check("launch: Start is the open page and the active tab",
+      S.tab === "start" && activePages().join() === "page-start" && activeTabs().join() === "start", `${S.tab} ${activePages()} ${activeTabs()}`);
+    let storedKeys = [];
+    try { storedKeys = Object.keys(localStorage); } catch (_) { /* no storage: nothing remembered either */ }
+    check("launch: the open tab is not stored anywhere", !storedKeys.some((k) => /tab|page/i.test(k)), storedKeys.join());
+
+    // ---- header (Update 6): one shared header, connected state at launch (stub: Thor connected)
+    const header = $(".topbar");
+    const statusMascot = () => $("#device-mascot").getAttribute("src");
+    await until(() => S.connected);
+    check("header: exactly one header, outside the pages", document.querySelectorAll("header").length === 1 && !header.closest(".page"));
+    check("header: wordmark 'ThorBro' and three ThorBros (sage, orange, coral SVGs)",
+      $(".brand-word").textContent === "ThorBro" &&
+      [...document.querySelectorAll(".brand-bros .bro")].map((i) => i.getAttribute("src")).join() ===
+        "assets/mascot/thorbro-bro-sage.svg,assets/mascot/thorbro-bro-orange.svg,assets/mascot/thorbro-bro-coral.svg",
+      [...document.querySelectorAll(".brand-bros .bro")].map((i) => i.getAttribute("src")).join());
+    check("header: no old square logo in the header", !header.querySelector(".brand-logo, img[src*='logo-256']"));
+    check("header: wordmark is semi-transparent and bold", getComputedStyle($(".brand-word")).opacity === "0.72" && Number(getComputedStyle($(".brand-word")).fontWeight) >= 700,
+      `${getComputedStyle($(".brand-word")).opacity} ${getComputedStyle($(".brand-word")).fontWeight}`);
+    check("header: ThorBros are in front of the wordmark",
+      getComputedStyle($(".brand-bros")).zIndex === "1" && getComputedStyle($(".brand-bros")).position === "relative");
+    check("header connected: pill 'Connected: <model>', solid outline, green dot",
+      $("#device-text").textContent === "Connected: Thor (fake)" && $("#device").classList.contains("on") &&
+      getComputedStyle($("#device")).borderTopStyle === "solid" && getComputedStyle($("#device .dot")).backgroundColor !== "rgba(0, 0, 0, 0)",
+      `${$("#device-text").textContent} ${getComputedStyle($("#device")).borderTopStyle}`);
+    check("header connected: ThorBro awake (thorbro-done), not tilted",
+      statusMascot() === "assets/mascot/thorbro-done.svg" && getComputedStyle($("#device-mascot")).transform === "none",
+      `${statusMascot()} ${getComputedStyle($("#device-mascot")).transform}`);
+    {
+      const seen = [];
+      for (const tab of ["start", "files", "saves", "stream"]) {
+        showTab(tab);
+        const box = header.getBoundingClientRect();
+        if (box.height > 0 && $(".brand-bros").getBoundingClientRect().height > 0 && $("#device-mascot").getBoundingClientRect().height > 0) seen.push(tab);
+      }
+      // Stream's sub-pages (PC games, Mirror, Help) live inside #page-stream, below the shared header.
+      check("header: shown on Start, Files, Saves and Stream", seen.join() === "start,files,saves,stream", seen.join());
+    }
+    {
+      // Wordmark, nav and status must sit in one row and fit in the test window (headless Firefox's
+      // own default size). run.mjs checks the header at other window sizes afterwards.
+      const rects = [$(".brand"), $(".tabs"), $(".status")].map((n) => n.getBoundingClientRect());
+      const oneRow = rects.every((r) => r.top < rects[1].bottom && r.bottom > rects[1].top);
+      const hb = header.getBoundingClientRect();
+      check("header: one row, no overflow, about 150 px or less in the test window",
+        oneRow && hb.height <= 160 && header.scrollWidth <= header.clientWidth && document.documentElement.scrollWidth <= innerWidth,
+        `${innerWidth}x${innerHeight} oneRow=${oneRow} h=${Math.round(hb.height)} sw=${header.scrollWidth}/${header.clientWidth}`);
+      check("header: pill text not cut off in the test window", $("#device-text").scrollWidth <= $("#device-text").clientWidth,
+        `${$("#device-text").scrollWidth}/${$("#device-text").clientWidth}`);
+    }
+    showTab("files");
+
     // ---- initial load
     check("initial listing shown", await until(() => S.cwd === "/sdcard" && FM.status === "ready" && S.shown.length === 6), JSON.stringify(names()));
     check("folders first, natural name order", names().join(",") === "big,Download,Music,a.txt,B.iso,c.zip", names().join(","));
@@ -104,9 +159,10 @@
     check("End goes to last", [...FM.picked].join() === "c.zip");
     key("m");
     check("type-ahead jumps to Music", [...FM.picked].join() === "Music");
-    check("rename enabled for one selection", !$("#btn-rename").disabled);
+    const menuHas = (label) => rowMenuItems().some((item) => item !== "-" && item.label === label);
+    check("Rename is offered for one selection", menuHas("Rename"));
     click("a.txt", { ctrlKey: true });
-    check("rename disabled for two", $("#btn-rename").disabled && !$("#btn-delete").disabled);
+    check("Rename is not offered for two, Delete is", !menuHas("Rename") && menuHas("Delete"));
 
     // ---- rubber band on the empty area below the rows
     key("Escape");
@@ -202,10 +258,13 @@
     selectPlace("/storage/1A2B-3C4D");
     await until(() => S.cwd === "/storage/1A2B-3C4D" && FM.status === "ready");
     key("v", { ctrlKey: true });
+    await until(() => callsOf("enqueue").length > 0); // paste first checks the amount (pool.js: guardedTransfer)
     const enq = callsOf("enqueue").pop();
     const j = enq && enq.args.jobs[0];
     check("cross-storage cut queues a copy job with move_after", j && j.thor_copy === true && j.move_after === true && j.src === "/sdcard/B.iso" && j.dest === "/storage/1A2B-3C4D", JSON.stringify(j));
+    const enqCount = callsOf("enqueue").length;
     click("sdfile"); key("c", { ctrlKey: true }); key("v", { ctrlKey: true });
+    await until(() => callsOf("enqueue").length > enqCount);
     const j2 = callsOf("enqueue").pop().args.jobs[0];
     check("copy+paste queues thor_copy without move_after", j2.thor_copy === true && j2.move_after === false && j2.dest === "/storage/1A2B-3C4D", JSON.stringify(j2));
     const n2 = callsOf("list_dir").length;
@@ -232,13 +291,13 @@
     // ---- context menu
     rowByName("Download").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 100, clientY: 100 }));
     const items = [...document.querySelectorAll(".ctx .ctx-item span")].map((s) => s.textContent);
-    check("row context menu has the actions", ["Open", "Cut", "Copy", "Paste into folder", "Rename …", "Delete"].every((x) => items.includes(x)), items.join("|"));
+    check("row context menu has the actions", ["Add to file pool", "Cut", "Copy", "Paste", "Rename", "Delete"].every((x) => items.includes(x)), items.join("|"));
     key("Escape");
     check("Escape closes the menu", !document.querySelector(".ctx"));
     list.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 100, clientY: lbox.top + 7 * ROW_HEIGHT_PX + 10 }));
     const items2 = [...document.querySelectorAll(".ctx .ctx-item span")].map((s) => s.textContent);
-    check("background menu", items2.includes("New folder") && items2.includes("Refresh"), items2.join("|"));
-    [...document.querySelectorAll(".ctx .ctx-item")].find((b) => b.textContent.startsWith("Refresh")).click();
+    check("background menu", items2.includes("New folder") && items2.includes("Add files …"), items2.join("|"));
+    [...document.querySelectorAll(".ctx .ctx-item")].find((b) => b.textContent.startsWith("Add folder")).click();
     check("menu item runs and menu closes", !document.querySelector(".ctx"));
 
     // ---- drag rows onto a folder (move)
@@ -256,17 +315,19 @@
     const mv2 = callsOf("move_paths").pop();
     check("drop uses move_paths into the folder", mv2.args.dest === "/sdcard/Download" && mv2.args.sources[0] === "/sdcard/Music", JSON.stringify(mv2.args));
 
-    // ---- drag out of the window hands over to drag_fetch (then drag_start)
+    // ---- dragging rows out of the window does nothing (drag-out was removed in DESIGN-UPDATE-5)
     await sleep(100);
     click("Download");
     const d2 = rowByName("Download").getBoundingClientRect();
+    const namesBeforeOut = names().join();
     rowByName("Download").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: d2.left + 60, clientY: d2.top + 10 }));
     document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: d2.left + 60, clientY: d2.top + 30 }));
-    const nf3 = callsOf("drag_fetch").length;
     document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: -5, clientY: 100 }));
-    await sleep(100);
-    check("leaving the window starts the drag-out fetch", callsOf("drag_fetch").length === nf3 + 1 && callsOf("drag_fetch").pop().args.path === "/sdcard/Download");
-    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    await sleep(60);
+    check("leaving the window while dragging rows starts nothing (still an in-window drag)", !!DRAG.items && !callsOf("drag_fetch").length && !callsOf("drag_start").length);
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: -5, clientY: 100 }));
+    await sleep(60);
+    check("…and releasing outside does nothing", !DRAG.items && names().join() === namesBeforeOut && $("#drag-ghost").classList.contains("hidden"));
 
     // ---- keyboard navigation
     list.focus();
@@ -301,8 +362,13 @@
     typing.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await sleep(20);
 
-    // ---- toolbar: Rename only in "More", "?" shortcuts panel
-    check("toolbar: Rename moved into More", !!$("#more-pop #btn-rename") && ![...document.querySelectorAll(".actions > button")].some((b) => b.id === "btn-rename"));
+    // ---- toolbar (DESIGN-UPDATE-5): Back, Forward, Refresh, path bar with pin, New folder, "?"
+    check("toolbar: Back, Forward, Refresh (drawn icons), path bar with the pin inside, New folder and ?",
+      ["back", "forward", "reload", "crumbs", "pin", "btn-mkdir", "btn-keys"].every((id) => document.getElementById(id)) &&
+      ["#back svg", "#forward svg", "#reload svg"].every((q) => $(q)) && $(".pathbar").contains($("#pin")) && $(".pathbar").contains($("#crumbs")) &&
+      $("#btn-mkdir").textContent === "New folder");
+    check("toolbar: Up, Send files/folders, Copy to PC, Delete, Pool and More are gone",
+      ["up", "btn-send-files", "btn-send-dirs", "btn-pull", "btn-delete", "btn-pool", "btn-more", "more-pop", "btn-rename", "btn-esde"].every((id) => !document.getElementById(id)) && !document.querySelector(".actions"));
     const keysPanel = $("#keys-panel");
     check("shortcuts panel hidden at first", keysPanel.classList.contains("hidden"));
     $("#keys").dispatchEvent(new MouseEvent("mouseenter"));
@@ -322,7 +388,7 @@
     check("Escape closes the panel and leaves the selection alone", keysPanel.classList.contains("hidden") && FM.picked.has(fileA));
     const listedKeys = [...keysPanel.querySelectorAll("dt")].map((d) => d.textContent);
     check("panel lists only shortcuts the file list handles (each one is tested in this file)",
-      listedKeys.join("|") === ["Open", "Up one folder", "Back / forward", "Refresh", "Select all", "Copy", "Cut", "Paste here", "Rename", "Delete", "New folder", "Pin / unpin folder"].join("|"),
+      listedKeys.join("|") === ["Add files from the PC", "Open", "Up one folder", "Back / forward", "Refresh", "Select all", "Copy", "Cut", "Paste here", "Rename", "Delete", "New folder", "Pin / unpin folder", "Menu for the selection"].join("|"),
       listedKeys.join("|"));
 
     // ---- transfer strip: real "transfer" events (files::Progress)
@@ -340,15 +406,6 @@
     await sleep(20);
     check("finished batch: done state, no Cancel", strip.classList.contains("done") && $("#p-cancel").classList.contains("hidden") && $("#p-mascot").src.endsWith("thorbro-done.svg"));
     hideTransfer();
-    // "Copy to PC": the pull command now emits progress (fake: one event at 50 %); position counted by the UI.
-    H.latency.pull = 150;
-    selectOnly(S.shown[0].name); toggleSelect(S.shown[1].name);
-    $("#btn-pull").click();
-    check("Copy to PC shows file 1 of 2 on the strip", await until(() => $("#p-meta").textContent === "file 1 of 2 · 50%"), $("#p-meta").textContent);
-    check("Copy to PC then shows file 2 of 2", await until(() => $("#p-meta").textContent === "file 2 of 2 · 50%"), $("#p-meta").textContent);
-    check("Copy to PC ends with a done state", await until(() => strip.classList.contains("done") && $("#p-text").textContent.includes("Copied 2 items")), $("#p-text").textContent);
-    H.latency.pull = undefined;
-    hideTransfer();
 
     // ---- stream tab, "Mirror Thor screens": three quick-start tiles, Stop, failures
     const tile = (which) => document.querySelector(`.stream-btn[data-which="${which}"]`);
@@ -365,14 +422,16 @@
       callsOf("stream_start").pop()?.args.which === "top" && !$("#stream-stop").classList.contains("hidden") &&
       $("#stream-status").textContent.includes("Top screen") && $("#mirror-state-img").src.endsWith("thorbro-busy.svg"), $("#stream-status").textContent);
     H.stream.failStart[4] = "Display 4 not found";
-    const toastsBefore = document.querySelectorAll(".toast.err").length;
+    // Counts only this failure's toasts (older error toasts may expire meanwhile).
+    const displayToasts = () => [...document.querySelectorAll(".toast.err")].filter((t) => t.textContent.includes("Display 4 not found")).length;
+    const toastsBefore = displayToasts();
     tile("bottom").click();
     await until(() => !$("#stream-error").classList.contains("hidden"));
     check("mirror: a failed start is shown under the status and as a toast, the other keeps running",
       $("#stream-error").textContent === "Bottom screen: Display 4 not found" && tile("top").classList.contains("running") &&
-      document.querySelectorAll(".toast.err").length === toastsBefore + 1, $("#stream-error").textContent);
+      displayToasts() === toastsBefore + 1, $("#stream-error").textContent);
     await streamStatus();
-    check("mirror: the same failure is not toasted twice", document.querySelectorAll(".toast.err").length === toastsBefore + 1);
+    check("mirror: the same failure is not toasted twice", displayToasts() === toastsBefore + 1);
     delete H.stream.failStart[4];
     tile("both").click();
     await until(() => tile("both").classList.contains("running"));
@@ -642,6 +701,395 @@
     H.pins = [];
     await loadPins();
     check("pins: no pins -> Start row hidden again", $("#start-pins").classList.contains("hidden") && sidePins().length === 0);
+
+    // ======================================================================================
+    // File pool, toolbar, history, context menus, drop card, large-transfer confirmation, Cancel, user-select
+    // ======================================================================================
+    showTab("files");
+    const addFs = (path, dir, size = 0) => H.fs.set(path, { dir, size, mtime: 1700000000 });
+    const mkDir = (path, files) => { addFs(path, true); for (const [name, size] of files) addFs(`${path}/${name}`, false, size); };
+    const modalButton = (label) => [...document.querySelectorAll("#modal-box button")].find((b) => b.textContent === label);
+    const modalTitle = () => $("#modal-box h2").textContent;
+    const toastTexts = () => [...document.querySelectorAll(".toast")].map((t) => t.textContent);
+    const openDir = async (path) => { go(path); await until(() => S.cwd === path && FM.status === "ready"); await refreshListing(path); return true; }; // fresh: the fixtures were just added to the fake Thor
+    const mutating = () => callsOf("move_paths").length + callsOf("enqueue").length + callsOf("delete_paths").length + callsOf("rename").length;
+    const rows = (...names) => names.map((n) => ({ path: joinPath(S.cwd, n), entry: { ...S.shown.find((e) => e.name === n) } }));
+    // Presses on a row, moves to (x, y) and releases there: a drag & drop by mouse.
+    const dragRow = async (name, x, y) => {
+      const r = rowByName(name), b = r.getBoundingClientRect();
+      r.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: b.left + 60, clientY: b.top + 10 }));
+      document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: b.left + 60, clientY: b.top + 30 }));
+      document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: x, clientY: y }));
+      const ghost = $("#drag-ghost").textContent;
+      document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: x, clientY: y }));
+      return ghost;
+    };
+    const centerOf = (el) => { const b = el.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; };
+
+    mkDir("/sdcard/poolsrc", [["p1.bin", 100], ["p2.bin", 200]]);
+    mkDir("/sdcard/poolsrc/pdir", [["q.bin", 50]]);
+    mkDir("/sdcard/pooldst", []);
+    mkDir("/sdcard/otherdir", [["o.bin", 7]]);
+    await openDir("/sdcard/poolsrc");
+
+    // ---- File pool in the sidebar (DESIGN-UPDATE-5): collecting never changes the Thor
+    const poolCard = $("#pool");
+    const shown = (node) => !node.classList.contains("hidden") && node.getClientRects().length > 0;
+    const poolButtons = () => [...$("#pool-foot").querySelectorAll("button")].map((b) => b.textContent).join("|");
+    check("pool: always in the sidebar, empty state (dashed border, 'wait' mascot, intro, 'Drop here', no buttons)",
+      $("#side").contains(poolCard) && shown(poolCard) && poolCard.classList.contains("is-empty") && getComputedStyle(poolCard).borderTopStyle === "dashed" &&
+      $("#pool-mascot").src.endsWith("assets/mascot/thorbro-wait.png") && shown($("#pool-intro")) &&
+      $("#pool-intro").textContent === "Collect files and folders from the Thor here, then copy them all to your PC in one go. Drag them in from the list. The Thor stays untouched." &&
+      shown($("#pool-drop")) && $("#pool-drop").textContent === "Drop here" && !shown($("#pool-foot")), `${getComputedStyle(poolCard).borderTopStyle} ${$("#pool-mascot").src}`);
+    check("pool: no toolbar button, no 340 px panel, no Move here / Copy here", !$("#btn-pool") && !$("#pool-move") && !$("#pool-copy") && !$("aside.pool"));
+    check("hint: nothing selected, pool empty -> how to add files (Ctrl+O, right-click)", $("#files-hint").textContent === HINTS.add && HINTS.add.includes("Ctrl+O"), $("#files-hint").textContent);
+    const mutBefore = mutating();
+    selectOnly("p1.bin");
+    check("hint: rows selected -> how to use the file pool", $("#files-hint").textContent === HINTS.pool, $("#files-hint").textContent);
+    toggleSelect("pdir");
+    addSelectionToPool();
+    check("pool: 'Add to file pool' collects the selection and changes nothing on the Thor",
+      POOL.items.length === 2 && mutating() === mutBefore && names().includes("p1.bin") && names().includes("pdir"));
+    check("pool: filled state (solid border, 'ask' mascot, count + total size, hint, exactly 'Copy to PC…' and 'Clear pool')",
+      await until(() => $("#pool-count").textContent === "2 items · 150 B") && poolCard.classList.contains("is-filled") && getComputedStyle(poolCard).borderTopStyle === "solid" &&
+      $("#pool-mascot").src.endsWith("assets/mascot/thorbro-ask.png") && !shown($("#pool-intro")) && !shown($("#pool-drop")) && shown($("#pool-foot")) &&
+      poolButtons() === "Copy to PC…|Clear pool" && $("#pool-foot").textContent.includes("You pick the folder on your PC next. Nothing on the Thor changes."),
+      `${$("#pool-count").textContent} / ${poolButtons()}`);
+    check("pool: rows show names (folders with /) and sizes", [...document.querySelectorAll("#pool-items .pool-item")].map((r) => r.children[0].textContent + "=" + r.children[1].textContent).sort().join() === "p1.bin=100 B,pdir/=50 B",
+      [...document.querySelectorAll("#pool-items .pool-item")].map((r) => r.textContent).join("|"));
+    clearSelection();
+    await sleep(30);
+    check("list: pooled rows are dimmed with an orange 'in pool' tag, others aren't",
+      rowByName("p1.bin").classList.contains("inpool") && rowByName("p1.bin").querySelector(".pool-tag")?.textContent === "in pool" &&
+      rowByName("pdir").classList.contains("inpool") && !rowByName("p2.bin").classList.contains("inpool") && !rowByName("p2.bin").querySelector(".pool-tag"));
+    check("hint: pool has items -> how to use the file pool", $("#files-hint").textContent === HINTS.pool);
+    addToPool(rows("p1.bin"));
+    check("pool: the same item twice is ignored", POOL.items.length === 2);
+    $("#pool-clear").click();
+    await sleep(20);
+    check("pool: Clear pool empties it (back to the empty state, tags gone) and touches nothing",
+      POOL.items.length === 0 && poolCard.classList.contains("is-empty") && !rowByName("p1.bin").classList.contains("inpool") && mutating() === mutBefore);
+
+    // Drag rows onto the pool card: collects, never moves.
+    selectOnly("p2.bin");
+    const [px, py] = centerOf($("#pool-drop"));
+    const ghostText = await dragRow("p2.bin", px, py);
+    check("pool: dropping rows on the pool card only adds (ghost says the Thor stays untouched)",
+      POOL.items.map((i) => i.name).join() === "p2.bin" && ghostText.includes("file pool") && ghostText.includes("untouched") && mutating() === mutBefore && names().includes("p2.bin"),
+      `${ghostText} / ${POOL.items.map((i) => i.name)}`);
+    selectOnly("p1.bin");
+    const [qx, qy] = centerOf(poolCard);
+    await dragRow("p1.bin", qx, qy);
+    check("pool: dropping on the filled card adds too", POOL.items.map((i) => i.name).join() === "p2.bin,p1.bin" && mutating() === mutBefore);
+    // Nested paths: an item inside a pooled folder is redundant, a folder swallows pooled children.
+    addToPool(rows("pdir"));
+    addToPool([{ path: "/sdcard/poolsrc/pdir/q.bin", entry: { name: "q.bin", dir: false, size: 50, mtime: 0 } }]);
+    check("pool: items inside a pooled folder are ignored", POOL.items.filter((i) => i.path.includes("q.bin")).length === 0 && POOL.items.length === 3);
+    removeFromPool("/sdcard/poolsrc/pdir");
+    addToPool([{ path: "/sdcard/poolsrc/pdir/q.bin", entry: { name: "q.bin", dir: false, size: 50, mtime: 0 } }]);
+    addToPool(rows("pdir"));
+    check("pool: adding a folder replaces its pooled children", POOL.items.map((i) => i.name).sort().join() === "p1.bin,p2.bin,pdir", POOL.items.map((i) => i.name).join());
+    document.querySelector("#pool-items .pool-item .x").click();
+    check("pool: × removes just that row", POOL.items.length === 2 && mutating() === mutBefore);
+
+    // ---- Copy to PC… (the only way from the Thor to the PC)
+    clearPool();
+    addToPool(rows("p1.bin", "pdir"));
+    await until(() => POOL.items.every((i) => i.sizeState === "known"));
+    let pickedOpts = null, picks = 0;
+    T.dialog.open = async (o) => { pickedOpts = o; picks++; return null; };
+    const enqBefore = callsOf("enqueue").length;
+    $("#pool-save").click();
+    await until(() => !POOL.busy && picks === 1);
+    check("copy to PC: leaving the folder picker without a folder does nothing", callsOf("enqueue").length === enqBefore);
+    T.dialog.open = async (o) => { pickedOpts = o; picks++; return "/home/user/saved"; };
+    $("#pool-save").click();
+    await until(() => callsOf("enqueue").length > enqBefore);
+    const saveJobs = callsOf("enqueue").pop().args.jobs;
+    check("copy to PC: folder picker (one folder), then pull jobs into it through the queue",
+      pickedOpts.directory && !pickedOpts.multiple && saveJobs.length === 2 && saveJobs.every((j) => j.pull && j.dest === "/home/user/saved") && saveJobs[0].src === "/sdcard/poolsrc/p1.bin", JSON.stringify(saveJobs));
+    check("copy to PC: the Thor is untouched and the pool stays", POOL.items.length === 2 && names().includes("p1.bin") && !callsOf("move_paths").some((c) => c.t > 0 && c.args.sources.includes("/sdcard/poolsrc/p1.bin")));
+    // Large amounts ask first (size, then count); Cancel opens no folder picker.
+    clearPool();
+    mkDir("/sdcard/hugedir", [["h.bin", 10]]);
+    H.bigSize["/sdcard/hugedir"] = 5 * 1024 ** 3;
+    await openDir("/sdcard");
+    addToPool(rows("hugedir"));
+    await until(() => POOL.items.every((i) => i.sizeState === "known"));
+    check("pool: shows the big total", $("#pool-count").textContent === "1 item · 5.0 GB", $("#pool-count").textContent);
+    const picksBefore = picks, enqBig = callsOf("enqueue").length;
+    $("#pool-save").click();
+    check("copy to PC: a large pool asks first with count and size", await until(() => S.modalOpen) && modalTitle() === "Copy “hugedir” (5.0 GB) to your PC?", modalTitle());
+    check("copy to PC: while asking, the buttons are locked", $("#pool-save").disabled && $("#pool-clear").disabled);
+    modalButton("Cancel").click();
+    await until(() => !POOL.busy);
+    check("copy to PC: Cancel in the question opens no picker and copies nothing", picks === picksBefore && callsOf("enqueue").length === enqBig && POOL.items.length === 1);
+    $("#pool-save").click();
+    await until(() => S.modalOpen);
+    modalButton("Choose folder…").click();
+    await until(() => callsOf("enqueue").length > enqBig);
+    check("copy to PC: confirming goes on to the picker and queues it", picks === picksBefore + 1 && callsOf("enqueue").pop().args.jobs[0].src === "/sdcard/hugedir");
+    clearPool();
+    delete H.bigSize["/sdcard/hugedir"];
+    // Many small items: the count alone asks.
+    mkDir("/sdcard/many", Array.from({ length: CONFIRM_ITEMS + 5 }, (_, i) => [`m${i}.txt`, 1]));
+    addFs("/sdcard/many/tgt", true);
+    await openDir("/sdcard/many");
+    addToPool(S.shown.filter((e) => !e.dir).map((e) => ({ path: joinPath(S.cwd, e.name), entry: e })));
+    $("#pool-save").click();
+    check("copy to PC: many items ask first", await until(() => S.modalOpen) && modalTitle().includes(`${CONFIRM_ITEMS + 5} items`), modalTitle());
+    modalButton("Cancel").click();
+    await until(() => !POOL.busy);
+    clearPool();
+    T.dialog.open = async () => null;
+
+    // ---- Context menus (DESIGN-UPDATE-5)
+    await openDir("/sdcard/poolsrc");
+    addFs("/sdcard/poolsrc/arch.zip", false, 30);
+    await openDir("/sdcard/poolsrc");
+    const menuSeq = () => [...document.querySelectorAll(".ctx > *")].map((c) => c.classList.contains("ctx-sep") ? "-" : c.children[0].textContent).join("|");
+    const rightClickRow = (name) => { const b = rowByName(name).getBoundingClientRect(); rowByName(name).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: b.left + 100, clientY: b.top + 10 })); };
+    const rightClickEmpty = () => { const b = $("#filelist").getBoundingClientRect(); $("#filelist").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: b.left + 100, clientY: b.top + (S.shown.length + 0.5) * ROW_HEIGHT_PX })); };
+    FM.clip = null;
+    selectOnly("p1.bin"); rightClickRow("p1.bin");
+    check("row menu, one file: Add to file pool | Cut, Copy, Paste | Rename, Delete", menuSeq() === "Add to file pool|-|Cut|Copy|Paste|-|Rename|Delete", menuSeq());
+    const ctxButton = (label) => [...document.querySelectorAll(".ctx .ctx-item")].find((b) => b.children[0].textContent === label);
+    check("row menu: shortcuts shown, Paste disabled with an empty clipboard, Delete in danger color",
+      ctxButton("Cut").children[1].textContent === "Ctrl+X" && ctxButton("Copy").children[1].textContent === "Ctrl+C" && ctxButton("Paste").children[1].textContent === "Ctrl+V" &&
+      ctxButton("Rename").children[1].textContent === "F2" && ctxButton("Delete").children[1].textContent === "Del" && ctxButton("Paste").disabled && ctxButton("Delete").classList.contains("danger"));
+    ctxButton("Add to file pool").click();
+    check("row menu: 'Add to file pool' adds the selection", POOL.items.map((i) => i.name).join() === "p1.bin" && !document.querySelector(".ctx"));
+    clearPool();
+    selectOnly("p1.bin"); toggleSelect("p2.bin"); rightClickRow("p2.bin");
+    check("row menu, two items: no Rename", menuSeq() === "Add to file pool|-|Cut|Copy|Paste|-|Delete", menuSeq());
+    closeMenu();
+    selectOnly("pdir"); rightClickRow("pdir");
+    check("row menu, one folder: 'Use as games folder …' (from More) before Rename", menuSeq() === "Add to file pool|-|Cut|Copy|Paste|-|Use as games folder …|-|Rename|Delete", menuSeq());
+    closeMenu();
+    selectOnly("arch.zip"); rightClickRow("arch.zip");
+    check("row menu, one archive: 'Extract here' (from More)", menuSeq() === "Add to file pool|-|Cut|Copy|Paste|-|Extract here|-|Rename|Delete", menuSeq());
+    closeMenu();
+    rightClickEmpty();
+    check("empty space menu, empty clipboard: Add files …, Add folder …, New folder", menuSeq() === "Add files …|Add folder …|New folder", menuSeq());
+    check("empty space menu: Ctrl+O shown for Add files", ctxButton("Add files …").children[1].textContent === "Ctrl+O");
+    closeMenu();
+    selectOnly("p2.bin"); key("c", { ctrlKey: true });
+    rightClickEmpty();
+    check("empty space menu with something copied: Paste appears", menuSeq() === "Add files …|Add folder …|Paste|New folder", menuSeq());
+    closeMenu();
+    FM.clip = null;
+    S.libs.push({ path: "/sdcard/poolsrc", label: "Test", systems: {}, total: 0, custom: true });
+    rightClickEmpty();
+    check("empty space menu inside a games folder: 'Import ES-DE info …' (from More)", menuSeq() === "Add files …|Add folder …|New folder|-|Import ES-DE info …", menuSeq());
+    closeMenu();
+    S.libs.pop();
+    // Add files … / Add folder … / Ctrl+O open the PC pickers; the files go into the open folder.
+    const openCalls = [];
+    T.dialog.open = async (o) => { openCalls.push(o); return openCalls.length === 1 ? ["/home/user/game.iso"] : null; };
+    rightClickEmpty();
+    ctxButton("Add files …").click();
+    check("'Add files …' opens a multi-file picker", await until(() => openCalls.length === 1) && openCalls[0].multiple && !openCalls[0].directory);
+    check("…and the picked files go into the open folder (no games folder: asks first)", await until(() => S.modalOpen) && modalTitle() === "No games folder set up");
+    const enqAdd = callsOf("enqueue").length;
+    modalButton("Copy here").click();
+    await until(() => callsOf("enqueue").length > enqAdd);
+    const addJob = callsOf("enqueue").pop().args.jobs[0];
+    check("…copy job from the PC into the open folder", addJob.src === "/home/user/game.iso" && addJob.dest === "/sdcard/poolsrc" && !addJob.thor_copy && !addJob.pull, JSON.stringify(addJob));
+    rightClickEmpty();
+    ctxButton("Add folder …").click();
+    check("'Add folder …' opens a folder picker", await until(() => openCalls.length === 2) && openCalls[1].directory);
+    list.focus();
+    key("o", { ctrlKey: true });
+    check("Ctrl+O opens the file picker", await until(() => openCalls.length === 3) && !openCalls[2].directory && openCalls[2].multiple);
+    T.dialog.open = async () => null;
+    selectOnly("p1.bin");
+    key("F10", { shiftKey: true });
+    check("Shift+F10 opens the menu for the selection", menuSeq().startsWith("Add to file pool"), menuSeq());
+    key("Escape");
+
+    // ---- History and path bar (there is no Up button: the segments replace it)
+    go("/sdcard/poolsrc/pdir");
+    await until(() => S.cwd === "/sdcard/poolsrc/pdir" && FM.status === "ready");
+    check("history: Forward is disabled and dimmed with nothing ahead", $("#forward").disabled && +getComputedStyle($("#forward")).opacity < 1 && !$("#back").disabled);
+    check("path bar: the open folder is the highlighted last segment", $("#crumbs button.here")?.textContent === "pdir");
+    [...$("#crumbs").querySelectorAll("button")].find((b) => b.dataset.path === "/sdcard/poolsrc").click();
+    check("path bar: a segment opens that folder", await until(() => S.cwd === "/sdcard/poolsrc"));
+    $("#back").click();
+    check("history: Back returns", await until(() => S.cwd === "/sdcard/poolsrc/pdir") && !$("#forward").disabled);
+    $("#forward").click();
+    check("history: Forward goes ahead again", await until(() => S.cwd === "/sdcard/poolsrc") && $("#forward").disabled);
+
+    // ---- Drag from the PC into the window: drop card on the list
+    const dd = (payload) => H.dragDrop({ payload });
+    await openDir("/sdcard/poolsrc/pdir");
+    dd({ type: "enter", paths: ["/home/user/a.iso", "/home/user/b"], position: { x: 10, y: 10 } });
+    check("drop card: list dimmed, card with the 'base' mascot, title, target folder and count",
+      !$("#drop-card").classList.contains("hidden") && $("#list-wrap").classList.contains("dropping") && $("#drop-card img").src.endsWith("assets/mascot/thorbro-base.png") &&
+      $(".drop-card-title").textContent === "Drop to add to the Thor" && $("#drop-card-dest").textContent === "poolsrc / pdir" && $("#drop-card-what").textContent.startsWith(" · 2 items"),
+      $(".drop-card-info").textContent);
+    check("drop card: total size once known", await until(() => $("#drop-card-what").textContent === " · 2 items · 4.0 KB"), $("#drop-card-what").textContent);
+    dd({ type: "over", position: { x: 20, y: 20 } });
+    check("drop card stays while dragging over", !$("#drop-card").classList.contains("hidden") && $("#drop-card-what").textContent.includes("2 items"));
+    dd({ type: "leave" });
+    check("drop card hides on leave, list no longer dimmed", $("#drop-card").classList.contains("hidden") && !$("#list-wrap").classList.contains("dropping"));
+    dd({ type: "enter", paths: ["/home/user/c.bin"], position: { x: 10, y: 10 } });
+    const enqDrop = callsOf("enqueue").length;
+    dd({ type: "drop", paths: ["/home/user/c.bin"], position: { x: 10, y: 10 } });
+    check("drop: card hides, files go into the open folder", $("#drop-card").classList.contains("hidden") && await until(() => S.modalOpen) && !!modalButton("Copy here"));
+    modalButton("Copy here").click();
+    await until(() => callsOf("enqueue").length > enqDrop);
+    check("…copy job into the open folder", callsOf("enqueue").pop().args.jobs[0].dest === "/sdcard/poolsrc/pdir");
+    await openDir("/sdcard");
+    dd({ type: "enter", paths: ["/home/user/c.bin"], position: { x: 10, y: 10 } });
+    check("drop card at a storage root names the storage", $("#drop-card-dest").textContent === "Internal storage", $("#drop-card-dest").textContent);
+    dd({ type: "leave" });
+    showTab("start");
+    dd({ type: "enter", paths: ["/home/user/c.bin"], position: { x: 10, y: 10 } });
+    check("other tabs keep the full-window overlay, no card", !$("#drop-overlay").classList.contains("hidden") && $("#drop-card").classList.contains("hidden"));
+    dd({ type: "leave" });
+    showTab("files");
+
+    // ---- Direct drop onto a folder: small = at once, large = asks first
+    await openDir("/sdcard/many");
+    await sleep(60);
+    const dropFiles = S.shown.filter((e) => !e.dir).map((e) => e.name);
+    FM.picked = new Set(dropFiles); afterSelection(); // only the files: "tgt" itself can't be a drop target while dragged
+    const tgtRect = rowByName("tgt").getBoundingClientRect();
+    const [tx, ty] = [tgtRect.left + 60, tgtRect.top + 10];
+    const mutDrop = mutating();
+    // Press on one of the selected files, drag the whole selection onto "tgt".
+    const firstFile = rowByName(dropFiles[0]), fb = firstFile.getBoundingClientRect();
+    firstFile.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: fb.left + 60, clientY: fb.top + 10 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: fb.left + 60, clientY: fb.top + 30 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, button: 0, clientX: tx, clientY: ty }));
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: tx, clientY: ty }));
+    check("direct drop of many items asks first and moves nothing yet", await until(() => S.modalOpen) && modalTitle().includes("items") && mutating() === mutDrop, `${modalTitle()} | cwd ${S.cwd} | mut ${mutating()} vs ${mutDrop} | ${JSON.stringify(callsOf("move_paths").pop())}`);
+    modalButton("Cancel").click();
+    await sleep(80);
+    check("…Cancel: nothing moved, items still listed", mutating() === mutDrop && dropFiles.every((n) => names().includes(n)));
+    // A cross-storage move of a big folder asks, and says it can be cancelled / originals stay until verified.
+    mkDir("/sdcard/bigmove", [["b.bin", 1]]);
+    H.bigSize["/sdcard/bigmove"] = 3 * 1024 ** 3;
+    await openDir("/sdcard");
+    const started = guardedTransfer("/storage/1A2B-3C4D", rows("bigmove"), true);
+    check("big cross-storage move asks and explains Cancel + verification", await until(() => S.modalOpen) && modalTitle().includes("3.0 GB") &&
+      $("#modal-box").textContent.includes("only removed after the copies are verified"), $("#modal-box").textContent);
+    modalButton("Move").click();
+    await started;
+    const bigJob = callsOf("enqueue").pop().args.jobs[0];
+    check("…confirming queues a verified copy-then-delete job", bigJob.thor_copy && bigJob.move_after && bigJob.dest === "/storage/1A2B-3C4D", JSON.stringify(bigJob));
+    delete H.bigSize["/sdcard/bigmove"];
+    // Unknown size on a slow transfer counts as large; on an instant move it doesn't.
+    H.fail.remote_sizes = "adb hiccup";
+    const mutUnknown = mutating();
+    const unknownAsk = guardedTransfer("/storage/1A2B-3C4D", rows("Download"), false);
+    check("unknown folder size on a copy across storages asks", await until(() => S.modalOpen) && modalTitle().includes("+"), modalTitle());
+    modalButton("Cancel").click();
+    check("…and Cancel does nothing", (await unknownAsk) === false && mutating() === mutUnknown);
+    delete H.fail.remote_sizes;
+    // A plain small drop is still immediate (covered by 'drop moves at once' above) and never measured.
+    const sizeCallsBefore = callsOf("remote_sizes").length;
+    await guardedTransfer("/sdcard/otherdir", rows("Download"), true);
+    check("small same-storage move: no confirmation and no size lookup", !S.modalOpen && callsOf("remote_sizes").length === sizeCallsBefore && callsOf("move_paths").pop().args.dest === "/sdcard/otherdir");
+
+    // ---- Cancel in the progress strip
+    progress({ text: "Moving big.iso (3.0 GB)", fraction: 0.4, cancellable: true, index: 1, count: 2 });
+    check("strip: Cancel visible while a move/copy is cancellable", !$("#p-cancel").classList.contains("hidden"));
+    progress({ text: "Removing the original of big.iso", fraction: 0, cancellable: false });
+    check("strip: Cancel is hidden while the original is being removed (can't be interrupted)", $("#p-cancel").classList.contains("hidden"));
+    progress({ text: "Moving big.iso (3.0 GB)", fraction: 0.4, cancellable: true });
+    const cancelsBefore = callsOf("cancel_transfer").length;
+    $("#p-cancel").click();
+    check("strip: Cancel asks and promises nothing is lost", await until(() => S.modalOpen) && $("#modal-box").textContent.includes("Nothing is lost") && !!modalButton("Keep copying") && !!modalButton("Cancel everything"), $("#modal-box").textContent);
+    modalButton("Keep copying").click();
+    await sleep(40);
+    check("strip: 'Keep copying' cancels nothing", callsOf("cancel_transfer").length === cancelsBefore);
+    $("#p-cancel").click();
+    await until(() => S.modalOpen);
+    modalButton("Cancel this one, copy the rest").click();
+    await until(() => callsOf("cancel_transfer").length === cancelsBefore + 1);
+    check("strip: 'this one' keeps the queue", callsOf("cancel_transfer").pop().args.clearQueue === false);
+    $("#p-cancel").click();
+    await until(() => S.modalOpen);
+    modalButton("Cancel everything").click();
+    await until(() => callsOf("cancel_transfer").length === cancelsBefore + 2);
+    check("strip: 'everything' clears the queue", callsOf("cancel_transfer").pop().args.clearQueue === true);
+    H.emit("transfer", { busy: false, text: "Stopped: 0 copied to /sdcard/x, 1 cancelled", detail: "", fraction: 1, dests: [], error: null, cancellable: false, cancelled: true, index: 0, count: 0 });
+    await sleep(30);
+    check("strip: the final message of a cancelled batch says it was stopped", $("#p-text").textContent.startsWith("Stopped") && $("#p-cancel").classList.contains("hidden"));
+    hideTransfer();
+
+    // ---- No text selection on rows, tiles, toolbars, panels; text fields keep it
+    const sel = (node) => getComputedStyle(node).userSelect;
+    const probe = document.createElement("input"); probe.type = "text"; document.body.append(probe);
+    const anyTile = el(`<button class="tile">x</button>`); document.body.append(anyTile);
+    check("user-select: none on rows, tiles, toolbars, the pool and the strip",
+      [rowEls()[0], anyTile, $(".toolbar"), $("#files-hint"), $("#pool"), $("#progress"), $("#list-head"), $("#pin"), $(".drop-card")].every((n) => sel(n) === "none"),
+      [rowEls()[0], anyTile, $(".toolbar"), $("#files-hint"), $("#pool"), $("#progress"), $("#list-head"), $("#pin"), $(".drop-card")].map((n) => sel(n) + ":" + (n.className || n.id)).join());
+    check("user-select: text fields can still be selected", sel(probe) === "text", sel(probe));
+    probe.remove(); anyTile.remove();
+    const cssText = await (await fetch("style.css")).text();
+    check("CSS also has the -webkit- prefixed form (WebKitGTK)", /-webkit-user-select:\s*none/.test(cssText));
+    // Pressing a row and dragging must not start a text selection.
+    await openDir("/sdcard");
+    const pressRow = rowEls()[0];
+    const pb = pressRow.getBoundingClientRect();
+    pressRow.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: pb.left + 60, clientY: pb.top + 10 }));
+    const duringPress = new Event("selectstart", { bubbles: true, cancelable: true });
+    pressRow.children[1].dispatchEvent(duringPress);
+    check("selectstart is blocked while a row is pressed / dragged", duringPress.defaultPrevented);
+    const inField = document.createElement("input"); inField.type = "text"; document.body.append(inField);
+    const fieldSelect = new Event("selectstart", { bubbles: true, cancelable: true });
+    inField.dispatchEvent(fieldSelect);
+    check("…but not inside a text field", !fieldSelect.defaultPrevented);
+    inField.remove();
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+    const afterPress = new Event("selectstart", { bubbles: true, cancelable: true });
+    pressRow.children[1].dispatchEvent(afterPress);
+    check("…and allowed again after the press", !afterPress.defaultPrevented);
+
+    // ---- connect / disconnect (Update 6): the header and the Files view switch live with the 3 s poll
+    {
+      showTab("files");
+      await openDir("/sdcard");
+      const offlineCard = $("#list-offline");
+      const visible = (n) => !!n && getComputedStyle(n).display !== "none" && n.getBoundingClientRect().height > 0;
+      const reason = "No Thor found – is the cable plugged in and USB debugging on?";
+      H.device = { connected: false, message: reason };
+      // No manual pollDevice(): the regular poll from main.js must pick it up.
+      const switchedOff = await until(() => $("#device-text").textContent === "Not connected", POLL_INTERVAL_MS + 1500);
+      check("disconnect: pill switches to 'Not connected' on the regular poll", switchedOff && !S.connected, $("#device-text").textContent);
+      check("disconnect: pill has a dashed outline, a hollow dot and muted text",
+        getComputedStyle($("#device")).borderTopStyle === "dashed" && !$("#device").classList.contains("on") &&
+        getComputedStyle($("#device .dot")).backgroundColor === "rgba(0, 0, 0, 0)" &&
+        getComputedStyle($("#device")).color !== getComputedStyle(document.body).color,
+        `${getComputedStyle($("#device")).borderTopStyle} ${getComputedStyle($("#device .dot")).backgroundColor}`);
+      check("disconnect: the reason from adb is kept in the pill's tooltip", $("#device").title.includes(reason), $("#device").title);
+      check("disconnect: ThorBro asleep (thorbro-wait-off), tilted",
+        statusMascot() === "assets/mascot/thorbro-wait-off.svg" && getComputedStyle($("#device-mascot")).transform !== "none",
+        `${statusMascot()} ${getComputedStyle($("#device-mascot")).transform}`);
+      check("disconnect: not the old 'wait' mascot in the header", !header.querySelector("img[src$='thorbro-wait.svg'], img[src$='thorbro-wait.png']"));
+      check("files offline: 'No Thor connected' card instead of the list",
+        visible(offlineCard) && !visible($("#list-head")) && !visible($("#filelist")) && $("#list-wrap").classList.contains("offline"));
+      check("files offline: card text",
+        offlineCard.querySelector(".list-offline-title").textContent === "No Thor connected" &&
+        offlineCard.querySelector(".list-offline-text").textContent ===
+          "Plug the Thor in with USB and make sure USB debugging is on. ThorBro wakes up as soon as it sees it.",
+        offlineCard.textContent.trim());
+      check("files offline: toolbar, sidebar and pool stay", visible($(".toolbar")) && visible($("#side")) && visible($("#pool")));
+      for (const tab of ["start", "saves", "stream"]) showTab(tab);
+      check("disconnect: header stays asleep on every tab", statusMascot() === "assets/mascot/thorbro-wait-off.svg" && $("#device-text").textContent === "Not connected");
+      showTab("files");
+
+      H.device = { connected: true, message: "AYN Thor" };
+      const switchedOn = await until(() => $("#device-text").textContent === "Connected: AYN Thor", POLL_INTERVAL_MS + 1500);
+      check("reconnect: pill switches back on the regular poll", switchedOn && S.connected, $("#device-text").textContent);
+      check("reconnect: ThorBro awake again", statusMascot() === "assets/mascot/thorbro-done.svg" && getComputedStyle($("#device-mascot")).transform === "none", statusMascot());
+      check("reconnect: the list replaces the card and is filled again",
+        await until(() => FM.status === "ready" && S.shown.length > 0) && !visible(offlineCard) && visible($("#filelist")) && visible($("#list-head")) && !$("#list-wrap").classList.contains("offline"),
+        `${FM.status} ${S.shown.length}`);
+      H.device = { connected: true, message: "Thor (fake)" };
+    }
 
     check("no JS errors logged", !(H.logs || []).length, (H.logs || []).join(" | "));
   } catch (e) {
