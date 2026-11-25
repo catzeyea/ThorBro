@@ -380,6 +380,54 @@ select:focus, input:focus { outline: var(--line) solid var(--orange); outline-of
 .tile:nth-child(8n+8) { --tile-r: var(--r-3); --tile-rot: calc(-1 * var(--tilt-b)); --tile-shadow: var(--shadow-small); }
 .tiles-empty { font-size: var(--fs-lead); color: var(--body); }
 
+/* Games by console (Update 9 board StartConsoles): heading + count, emulator chips, square covers. */
+.games { display: flex; flex-direction: column; gap: 34px; }
+.consoles { display: flex; flex-direction: column; gap: 40px; }
+.console { display: flex; flex-direction: column; gap: 16px; }
+.console-head { display: flex; align-items: baseline; gap: 14px; }
+.console-head h3 { margin: 0; font-weight: 700; font-size: 28px; }
+.console-count { font-size: 15px; font-weight: 600; color: var(--orange); }
+.emu-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.emu-row > .label { font-size: 13px; }
+.emu-none { font-size: 13px; color: var(--mute); }
+.emu-chip {
+  display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px;
+  border: var(--line) solid var(--ink-line); border-radius: var(--r-chip-pin); background: var(--panel);
+  font-weight: 600; font-size: var(--fs-button); color: var(--ink); white-space: nowrap;
+}
+.emu-chip:nth-of-type(even) { border-radius: var(--r-btn-2); }
+.emu-count { font-size: 13px; font-weight: 500; color: var(--mute); }
+.emu-chip.broken { border-style: dashed; }
+.emu-chip.add { border: var(--line) dashed rgba(239, 231, 210, 0.45); background: transparent; color: var(--mute); box-shadow: none; }
+.emu-chip.add:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-line); }
+.covers { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 22px 20px; margin-top: 6px; }
+@media (max-width: 1100px) { .covers { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .covers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cover-tile {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 0; border: none; background: none;
+  box-shadow: none; text-align: left; color: var(--ink); white-space: normal;
+}
+button.cover-tile:hover:not(:disabled) { transform: translate(-1px, -2px); }
+.cover {
+  position: relative; aspect-ratio: 1 / 1; box-sizing: border-box; overflow: hidden;
+  border-radius: 14px 11px 15px 12px; border: var(--line) solid var(--ink); background: var(--cover-color, var(--sage));
+  box-shadow: 4px 5px 0 var(--shadow-color); display: flex; align-items: center; justify-content: center;
+}
+.cover-tile:nth-child(even) .cover { border-radius: 11px 15px 12px 14px; }
+.cover-initials { color: var(--on-color); font-weight: 700; font-size: 34px; opacity: .92; }
+.cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .2s; }
+.cover.has-img img { opacity: 1; }
+.cover.has-img .cover-initials { visibility: hidden; }
+.cover-title { font-weight: 600; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+.cover-sub { font-size: 12px; color: var(--mute); }
+.show-all { align-self: flex-start; font-size: 14px; }
+.add-console {
+  align-self: flex-start; padding: 12px 20px; border: var(--line) dashed rgba(239, 231, 210, 0.45);
+  background: transparent; color: var(--mute); font-weight: 600; box-shadow: none;
+}
+.add-console:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-line); }
+.emu-list { margin: 6px 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+
 /* Pinned folders row (js/pins.js), between the drop zone and Libraries. */
 .pins-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 .pins-row > .label { font-size: 14px; }
@@ -707,7 +755,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .pick-item .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pick-item .s { font-size: 12px; color: var(--mute); word-break: break-all; }
 
-/* ------------------------------------------------------------------ Saves (not designed yet: tokens only) */
+/* ------------------------------------------------------------------ Saves (Update 9: cards with emulator chip, 2-step add dialog) */
 .saves-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 22px; padding: 0 6px 6px 0; }
 @media (max-width: 420px) { .cards { grid-template-columns: 1fr; } }
@@ -721,12 +769,16 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .card:nth-child(4n)   { border-radius: var(--r-3); box-shadow: var(--shadow-4); }
 .card-top { display: flex; align-items: center; gap: 6px; }
 .card-top h2 { flex: 1; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status { font-weight: 600; }
-.status.ok { color: var(--sage); }
-.status.warn { color: var(--orange); }
-.status.accent { color: var(--sage); }
-.status.dim { color: var(--mute); font-weight: 500; }
+/* Save state with a dot (Update 9 board PCSaves): green in sync, orange one side newer, red only on one side. */
+.save-state { font-weight: 500; font-size: 14px; color: var(--body); display: flex; align-items: center; gap: 9px; }
+.save-state::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--mute); flex: none; }
+.save-state.ok::before { background: var(--sage); }
+.save-state.accent::before, .save-state.warn::before { background: var(--orange); }
+.save-state.only::before { background: var(--danger); }
+.save-state.dim { color: var(--mute); }
 .card .detail { font-size: 12px; color: var(--mute); white-space: pre-wrap; }
+.card-emu { flex: none; }
+.card-note { margin: 0; font-size: 12px; color: var(--orange); line-height: 1.45; }
 .card .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
 .card .btns.one { grid-template-columns: 1fr; }
 .card .btns button { padding: 10px; }
@@ -749,6 +801,38 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .note.ai { font-style: italic; }
 .hint-ok { color: var(--sage); }
 .hint-warn { color: var(--orange); }
+
+/* "+ Add a game save" (boards PCSavesAdd1 / PCSavesAdd2) */
+.step-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.step-head .step { font-size: 13px; color: var(--mute); white-space: nowrap; }
+.add-save { gap: 12px; }
+.add-save .search { font-size: 16px; }
+.add-save .results { display: flex; flex-direction: column; gap: 10px; }
+.add-save .small { font-size: 13px; margin: 0; }
+.add-save .busy { padding: 16px 0; }
+.picked-game { display: flex; flex-direction: column; gap: 4px; }
+.picked-game .t { font-size: 18px; }
+.pick-row, .emu-row-pick {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%;
+  padding: 12px 18px; text-align: left; white-space: normal; background: var(--panel);
+}
+.pick-row { flex-direction: column; align-items: flex-start; gap: 2px; }
+.pick-row .s, .emu-row-pick .s { font-size: 13px; color: var(--mute); font-weight: 500; }
+.emu-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.emu-row-pick .state { font-size: 14px; font-weight: 600; color: var(--mute); white-space: nowrap; }
+.emu-row-pick.found { border-color: var(--ink); }
+.emu-row-pick.found .state { color: var(--sage); }
+.emu-row-pick:disabled { opacity: .55; }
+.save-game { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 18px; }
+.save-folder {
+  display: flex; flex-direction: column; gap: 6px; padding: 14px 18px;
+  border: var(--line) solid var(--sage-line); border-radius: var(--r-2);
+}
+.save-folder .path { font-size: 15px; word-break: break-all; -webkit-user-select: text; user-select: text; }
+.save-folder .info { font-size: 13px; }
+.add-save .why { margin: 0; line-height: 1.5; color: var(--body); }
+.modal-foot .foot-gap { flex: 1; }
+.modal-foot .link-btn { align-self: center; }
 .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .check input { width: 16px; height: 16px; accent-color: var(--sage); }
 .big-choice { display: flex; flex-direction: column; gap: 10px; }

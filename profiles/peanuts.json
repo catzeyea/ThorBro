@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "id": "peanuts",
+  "name": "Peanuts",
+  "package": "dev.nxnative.android.peanuts",
+  "console": "switch",
+  "games": { "dirs": "{appdata}/files/packs", "name_file": "game.tsv" },
+  "saves": {
+    "folder": "{appdata}/files/saves/{title_id}",
+    "title_id": "switch",
+    "write": false,
+    "write_note": "ThorBro can read, pull and back up Peanuts saves, but can't write them back yet: Peanuts keeps a second copy (.work) and some of its save folders are read-only for adb."
+  },
+  "art": ["iisu"]
+}

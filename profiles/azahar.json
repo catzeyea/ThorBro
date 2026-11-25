@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "azahar",
+  "name": "Azahar",
+  "package": "org.azahar_emu.azahar",
+  "console": "n3ds",
+  "saves": {
+    "base": { "search": { "marker": "sdmc/Nintendo 3DS", "depth": 5 } },
+    "folder": "{base}/sdmc/Nintendo 3DS/00000000000000000000000000000000/00000000000000000000000000000000/title/00040000/{title_id_low}/data/00000001",
+    "title_id": "3ds",
+    "write": true
+  },
+  "art": ["iisu"]
+}

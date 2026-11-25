@@ -29,6 +29,13 @@ no CPU column before the second reading, the same mood in the header on every pa
 and a Thor is connected, the skipped tick while a reading (or a device poll) still runs, and that the drop line is not a
 button. The Rust side (`src/status.rs`) parses output captured from a real Thor; `cargo test device_status_reads --
 --ignored` reads the connected Thor.
+Update 9 (fake catalog in `HARNESS.catalog`, profiles in `HARNESS.profiles`, saves in `HARNESS.games`): one Start block per
+console with game count, emulator chips with counts, "+ Add emulator" (profiles, install state, profile folder, skipped
+profiles), square covers in 6 columns, only uncached covers fetched, initials when there is no art, "Show all", "+ Add a
+console or a folder"; save cards with emulator chip, state, "last synced", Peanuts' disabled "Continue on Thor", the PC
+folder picker before the first "Continue on PC"; "+ Add a game save" in two steps, greyed emulators, already managed saves,
+"Wrong folder? Browse" and "The game isn't on the Thor". On the real Thor: `cargo test device_catalog -- --ignored --nocapture`,
+`cargo test device_art -- --ignored`, `cargo test device_rename_swap -- --ignored`.
 
 ```sh
 node tests/ui/run.mjs           # needs node >= 22 and firefox

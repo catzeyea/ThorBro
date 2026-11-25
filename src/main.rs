@@ -12,8 +12,11 @@
 
 // Each `mod` line pulls in `src/<name>.rs` (or `src/<name>/mod.rs`) as a module.
 mod adb;
+mod art;
+mod catalog;
 mod cli;
 mod commands;
+mod emulators;
 mod esde_import;
 mod files;
 mod library;
@@ -36,6 +39,17 @@ fn main() {
     files::remove_legacy_drag_cache();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Covers from the PC cache (art.rs): <img src="thorart://localhost/<key>"> (the UI builds the
+        // URL with convertFileSrc, which also handles Windows' http://thorart.localhost form).
+        .register_uri_scheme_protocol("thorart", |_ctx, request| {
+            let (status, mime, body) = art::serve(request.uri().path());
+            tauri::http::Response::builder()
+                .status(status)
+                .header("Content-Type", mime)
+                .header("Cache-Control", "max-age=31536000, immutable")
+                .body(body)
+                .unwrap()
+        })
         // Makes `AppState` available to every command as `State<'_, AppState>`.
         .manage(AppState::default())
         // Every function the UI may call with `invoke(...)` must be listed here.
@@ -75,6 +89,15 @@ fn main() {
             commands::peek,
             commands::save_game,
             commands::remove_game,
+            commands::emulator_profiles,
+            commands::open_profiles_dir,
+            commands::game_catalog,
+            commands::fetch_art,
+            commands::find_save,
+            commands::browse_emulator,
+            commands::add_save,
+            commands::set_save_folder,
+            commands::scan_pc_for,
             commands::open_backups,
             commands::scan_thor_sources,
             commands::prepare_import,

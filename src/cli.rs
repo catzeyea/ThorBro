@@ -170,6 +170,10 @@ fn cli_sync(target: &str, query: &str) -> i32 {
         println!("✓ Both sides are already the same.");
         return 0;
     }
+    if let Some(reason) = &plan.blocked {
+        eprintln!("✗ {reason}");
+        return 1;
+    }
     if !confirm_sync(&plan) {
         println!("Cancelled.");
         return 0;
@@ -181,6 +185,9 @@ fn cli_sync(target: &str, query: &str) -> i32 {
     }
     match saves::run_sync(&name, &cfg, target, plan.running_pkg.as_deref()) {
         Ok(backup) => {
+            if let Err(e) = saves::mark_synced(&name) {
+                eprintln!("  (couldn't note the sync time: {e})");
+            }
             if let Some(backup) = backup {
                 println!("  Backup: {backup}");
             }

@@ -254,7 +254,7 @@ fn private_dirs() -> Vec<String> {
 /// session. Paths without files are left out.
 ///
 /// With `files_too == true`, a path may also be a single file (counted as 1 file).
-pub(super) fn thor_stats(paths: &[String], files_too: bool) -> Vec<(String, u64, f64)> {
+pub(crate) fn thor_stats(paths: &[String], files_too: bool) -> Vec<(String, u64, f64)> {
     let mut script = String::new();
     for path in paths {
         script += &tcmd(path, &thor_stats_command(path, files_too));

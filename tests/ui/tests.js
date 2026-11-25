@@ -1216,6 +1216,208 @@
       showTab("files");
     }
 
+    // ---- Update 9: games by console on Start, emulator chips, square covers, save cards, "+ Add a game save"
+    {
+      const now = Date.now() / 1000;
+      const EDEN = "/sdcard/Android/data/dev.igawa6.edenduo/files/nand/user/save/0000000000000000/5D1B4CDA089A581DAA9E48BC2B43C120";
+      const PEANUTS = "/sdcard/Android/data/dev.nxnative.android.peanuts/files/saves";
+      const art = (key, cached) => ({ path: `/storage/X/Android/media/com.iisulauncher/iiSULauncher/assets/media/roms/consoles/switch/${key}/icon.jpg`, key: `${key.padEnd(32, "0")}.jpg`, cached });
+      const game = (title, title_id, saves, artRef = null, rom = true) => ({
+        title, title_id, saves, art: artRef, rom: rom ? `/storage/X/ROMs/switch/${title}.nsp` : null, lib: rom ? "/storage/X/ROMs" : null,
+      });
+      const save = (title_id, path, files) => ({ title_id, path, files, newest: now - 60, when: "x" });
+      const many = Array.from({ length: 12 }, (_, i) => game(`Filler ${String(i).padStart(2, "0")}`, `01000000000${String(i).padStart(2, "0")}000`, []));
+      H.profiles = {
+        profiles: [
+          { id: "eden", name: "Eden", package: "dev.eden.eden_emulator", console: "switch", write: true, write_note: null, source: "builtin" },
+          { id: "eden-duo", name: "Eden Duo", package: "dev.igawa6.edenduo", console: "switch", write: true, write_note: null, source: "builtin" },
+          { id: "peanuts", name: "Peanuts", package: "dev.nxnative.android.peanuts", console: "switch", write: false, write_note: "ThorBro can read, pull and back up Peanuts saves, but can't write them back yet.", source: "builtin" },
+          { id: "azahar", name: "Azahar", package: "org.azahar_emu.azahar", console: "n3ds", write: true, write_note: null, source: "builtin" },
+        ],
+        errors: [{ file: "broken.json", error: "format must be 1" }],
+        user_dir: "/home/me/.config/thorBro/profiles",
+      };
+      const emulator = (id, name, console_, saves, games = null, write = true) => ({
+        id, name, package: id, console: console_, installed: true, write, write_note: write ? null : "ThorBro can read, pull and back up Peanuts saves, but can't write them back yet.", source: "builtin", games, saves, error: null,
+      });
+      H.catalog = {
+        consoles: [
+          {
+            id: "switch", folder: "switch", full: "Nintendo Switch", emulators: ["eden", "eden-duo", "peanuts"],
+            games: [
+              game("Super Mario Odyssey", "0100000000010000", ["eden-duo", "peanuts"], art("smo", true)),
+              game("The Legend of Zelda Breath of the Wild", "01007EF00011E000", ["eden-duo", "peanuts"], art("botw", false)),
+              game("Pokemon Brick", "0100AAAAAAAAA000", [], art("brick", false)),
+              ...many,
+            ],
+          },
+          { id: "ps2", folder: "ps2", full: "Sony PlayStation 2", emulators: [], games: [{ title: "Devil May Cry 3", title_id: null, saves: [], art: null, rom: "/storage/X/ROMs/ps2/dmc3.iso", lib: "/storage/X/ROMs" }] },
+        ],
+        emulators: [
+          emulator("eden", "Eden", "switch", []),
+          emulator("eden-duo", "Eden Duo", "switch", [save("0100000000010000", `${EDEN}/0100000000010000`, 2), save("01007EF00011E000", `${EDEN}/01007EF00011E000`, 27)]),
+          emulator("peanuts", "Peanuts", "switch", [save("0100000000010000", `${PEANUTS}/0100000000010000`, 2), save("01007EF00011E000", `${PEANUTS}/01007EF00011E000`, 27)], 2, false),
+        ],
+        search: [
+          { console: "switch", console_name: "Nintendo Switch", title: "Super Mario Odyssey", title_id: "0100000000010000" },
+          { console: "switch", console_name: "Nintendo Switch", title: "The Legend of Zelda Breath of the Wild", title_id: "01007EF00011E000" },
+          { console: "switch", console_name: "Nintendo Switch", title: "The Legend of Zelda Tears of the Kingdom", title_id: "0100F2C0115B6000" },
+        ],
+        profile_errors: [],
+      };
+      H.artMissing = [art("brick", false).key];
+      const consoles = () => [...document.querySelectorAll("#start-consoles .console")];
+      const tilesOf = (block) => [...block.querySelectorAll(".cover-tile")];
+      const tileNamed = (title) => [...document.querySelectorAll(".cover-tile")].find((t) => t.querySelector(".cover-title").textContent === title);
+      showTab("start");
+      H.calls.length = 0;
+      renderLibraryViews(); // as after loadPlaces / refreshLibs
+      await until(() => consoles().length === 2);
+      const [sw, ps2] = consoles();
+      check("start: one block per console with heading and game count (from the catalog)",
+        sw.querySelector("h3").textContent === "Switch" && sw.querySelector(".console-count").textContent === "15 games" &&
+        ps2.querySelector("h3").textContent === "PlayStation 2" && ps2.querySelector(".console-count").textContent === "1 game" && callsOf("game_catalog").length === 1,
+        consoles().map((c) => c.querySelector("h3").textContent + " " + c.querySelector(".console-count").textContent).join());
+      const chips = [...sw.querySelectorAll(".emu-chip")].map((c) => c.textContent);
+      check("start: emulator chips with counts (games only for emulators that bring their own), then '+ Add emulator'",
+        chips.join("|") === "Eden0 saves|Eden Duo2 saves|Peanuts2 games · 2 saves|+ Add emulator", chips.join("|"));
+      check("start: a console without emulator profiles says so and still offers '+ Add emulator'",
+        !!ps2.querySelector(".emu-none") && ps2.querySelector(".emu-chip.add").textContent === "+ Add emulator");
+      check("start: '+ Add a console or a folder' is the last block", $("#start-consoles").lastElementChild.textContent === "+ Add a console or a folder");
+      const grid = sw.querySelector(".covers");
+      check("start: cover grid has 6 columns at full width and shows 12 covers + 'Show all 15'",
+        getComputedStyle(grid).gridTemplateColumns.split(" ").length === 6 && tilesOf(sw).length === 12 && sw.querySelector(".show-all").textContent === "Show all 15",
+        `${getComputedStyle(grid).gridTemplateColumns} ${tilesOf(sw).length}`);
+      const coverBox = tileNamed("Super Mario Odyssey").querySelector(".cover").getBoundingClientRect();
+      check("start: covers are square", Math.abs(coverBox.width - coverBox.height) < 1.5, `${coverBox.width}x${coverBox.height}`);
+      await until(() => tileNamed("The Legend of Zelda Breath of the Wild").querySelector(".cover").classList.contains("has-img"));
+      const fetched = callsOf("fetch_art").flatMap((c) => c.args.items.map((i) => i.key));
+      check("start: only uncached covers are fetched, cached ones show right away",
+        fetched.includes(art("botw").key) && fetched.includes(art("brick").key) && !fetched.includes(art("smo").key) &&
+        tileNamed("Super Mario Odyssey").querySelector(".cover").classList.contains("has-img") && H.coverUrls.includes(`thorart:${art("smo").key}`), fetched.join());
+      const brick = tileNamed("Pokemon Brick").querySelector(".cover");
+      check("start: no art (or fetch failed) -> initials on a color",
+        !brick.querySelector("img") && brick.querySelector(".cover-initials").textContent === "PB" && !!brick.style.getPropertyValue("--cover-color") &&
+        ps2.querySelector(".cover-initials").textContent === "DM", brick.innerHTML);
+      check("start: under each cover the emulators that have a save ('no save yet' / nothing without emulators)",
+        tileNamed("Super Mario Odyssey").querySelector(".cover-sub").textContent === "Eden Duo · Peanuts" &&
+        tileNamed("Pokemon Brick").querySelector(".cover-sub").textContent === "no save yet" &&
+        tileNamed("Devil May Cry 3").querySelector(".cover-sub").textContent === "");
+      sw.querySelector(".show-all").click();
+      check("start: 'Show all' shows every cover", tilesOf(consoles()[0]).length === 15 && consoles()[0].querySelector(".show-all").textContent === "Show fewer");
+      consoles()[0].querySelector(".emu-chip.add").click();
+      await until(() => !$("#modal").classList.contains("hidden") && $("#modal-box").textContent.includes("Emulators for Switch"));
+      const emuDialog = $("#modal-box").textContent;
+      check("start: '+ Add emulator' lists the profiles for the console, install state, the profile folder and skipped profiles",
+        emuDialog.includes("Eden Duo") && emuDialog.includes("Peanuts") && !emuDialog.includes("Azahar") && emuDialog.includes("installed") &&
+        emuDialog.includes("/home/me/.config/thorBro/profiles") && emuDialog.includes("broken.json: format must be 1"), emuDialog);
+      key("Escape");
+      tileNamed("Devil May Cry 3").click();
+      check("start: clicking a game opens its folder in Files", S.tab === "files");
+      showTab("start");
+      H.fail.game_catalog = "adb died";
+      await loadCatalog();
+      check("start: a failed catalog keeps the last one", consoles().length === 2);
+      delete H.fail.game_catalog;
+
+      // Save cards: emulator chip, state dot, last synced, Peanuts can't be written.
+      H.games = {
+        "Breath Of The Wild": { pc: "/home/me/eden/01007EF00011E000", thor: `${EDEN}/01007EF00011E000`, emulator: "eden-duo", title_id: "01007EF00011E000", last_sync: now - 120 },
+        "The Legend of Zelda Breath of the Wild (Peanuts)": { pc: null, thor: `${PEANUTS}/01007EF00011E000`, emulator: "peanuts", title: "The Legend of Zelda Breath of the Wild", title_id: "01007EF00011E000" },
+      };
+      const side = (files, newest) => ({ exists: files > 0, files, newest, newest_text: "t", summary: `${files} files`, names: [] });
+      H.status = {
+        "Breath Of The Wild": { pc: side(27, 100), thor: side(27, 200), same: false },
+        "The Legend of Zelda Breath of the Wild (Peanuts)": { pc: side(0, 0), thor: side(27, 300), same: false },
+      };
+      showTab("saves");
+      const cardEls = () => [...document.querySelectorAll("#game-list .card")];
+      await until(() => cardEls().length === 2 && cardEls().every((c) => !c.querySelector(".save-state").textContent.startsWith("Checking")));
+      const [edenCard, peanutsCard] = cardEls();
+      const btns = (card) => [...card.querySelectorAll(".btns button")];
+      check("saves: cards show the game title and an emulator chip",
+        edenCard.querySelector("h2").textContent === "Breath Of The Wild" && edenCard.querySelector(".card-emu").textContent === "Eden Duo" &&
+        peanutsCard.querySelector("h2").textContent === "The Legend of Zelda Breath of the Wild" && peanutsCard.querySelector(".card-emu").textContent === "Peanuts");
+      check("saves: 'Thor save is newer' (orange dot), last synced, 'Continue on PC' highlighted",
+        edenCard.querySelector(".save-state").textContent === "Thor save is newer" && edenCard.querySelector(".save-state").classList.contains("accent") &&
+        edenCard.querySelector(".detail").textContent.startsWith("last synced today") && btns(edenCard)[0].classList.contains("primary") &&
+        btns(edenCard).map((b) => b.textContent).join("|") === "Continue on PC|Continue on Thor", edenCard.textContent);
+      check("saves: Peanuts: 'Only on Thor', never synced, 'Continue on Thor' disabled with the reason on the card",
+        peanutsCard.querySelector(".save-state").textContent === "Only on Thor" && peanutsCard.querySelector(".save-state").classList.contains("only") &&
+        peanutsCard.querySelector(".detail").textContent === "never synced" && btns(peanutsCard)[1].disabled && !btns(peanutsCard)[0].disabled &&
+        peanutsCard.querySelector(".card-note").textContent.includes("can't write them back yet"), peanutsCard.textContent);
+      // "Continue on PC" without a PC folder asks for it first (title ID matches come first from Rust).
+      H.pcCands = [{ path: "/home/me/eden/nand/user/save/0000000000000000/57F9/01007EF00011E000", mtime: now, when: "today", files: 27, note: "[title ID]", match: false }];
+      H.plan["The Legend of Zelda Breath of the Wild (Peanuts)"] = { src_name: "Thor", dst_name: "PC", empty: false, same: true, dst_newer: false, running_pkg: null, blocked: null, src: side(27, 300), dst: side(27, 300) };
+      btns(peanutsCard)[0].click();
+      await until(() => !!document.querySelector("#modal-box .pick-item"));
+      check("saves: 'Continue on PC' without a PC folder opens the picker with the PC candidates",
+        $("#modal-box h2").textContent.includes("on the PC") && $("#modal-box .pick-item .s").textContent.includes("[title ID]") && callsOf("scan_pc_for").length === 1);
+      document.querySelector("#modal-box .pick-item").click();
+      await until(() => callsOf("plan_sync").length === 1);
+      check("saves: the picked PC folder is stored, then the sync is planned",
+        JSON.stringify(callsOf("set_save_folder")[0].args) === JSON.stringify({ name: "The Legend of Zelda Breath of the Wild (Peanuts)", side: "pc", path: H.pcCands[0].path }) &&
+        callsOf("plan_sync")[0].args.target === "pc", JSON.stringify(callsOf("set_save_folder")));
+      await until(() => $("#modal").classList.contains("hidden"));
+
+      // "+ Add a game save": step 1 (search, emulators with a save first, others greyed), step 2 (one folder), add.
+      const box = () => $("#modal-box");
+      const typeSearch = (text) => { const input = box().querySelector("input.search"); input.value = text; input.dispatchEvent(new Event("input")); };
+      $("#btn-add-game").click();
+      await until(() => !!box().querySelector("input.search") && callsOf("game_catalog").length >= 3);
+      check("add save: step 1 of 2 with a search field, reads the Thor again", box().querySelector("h2").textContent === "Add a game save" && box().querySelector(".step").textContent === "Step 1 of 2");
+      typeSearch("zelda");
+      check("add save: several matches -> pick the game first",
+        [...box().querySelectorAll(".pick-row .t")].map((t) => t.textContent).join("|") === "The Legend of Zelda Breath of the Wild|The Legend of Zelda Tears of the Kingdom");
+      typeSearch("nothing like this");
+      check("add save: no match says so", box().querySelector(".results").textContent.includes("No game on your Thor matches"));
+      typeSearch("mario odyssey");
+      await until(() => box().querySelectorAll(".emu-row-pick").length === 3);
+      const rows = [...box().querySelectorAll(".emu-row-pick")];
+      const rowText = rows.map((r) => `${r.querySelector("b").textContent}:${r.querySelector(".state").textContent}:${r.disabled}`).join("|");
+      check("add save: one match -> the game, then emulators with a save first, the other one greyed",
+        box().querySelector(".picked-game .t").textContent === "Super Mario Odyssey" &&
+        rowText === "Eden Duo:Save found:false|Peanuts:Save found:false|Eden:No save for this game:true" &&
+        rows[1].querySelector(".s").textContent.startsWith("2 files · changed today"), rowText);
+      rows[1].click();
+      await until(() => box().querySelector("h2").textContent === "Is this your save?");
+      check("add save: step 2 shows exactly one folder (path, file count, last change) and the Peanuts note",
+        box().querySelector(".step").textContent === "Step 2 of 2" && box().querySelector(".save-game .emu-chip").textContent === "Peanuts" &&
+        box().querySelector(".path").textContent === "Android/data/dev.nxnative.android.peanuts/files/saves/0100000000010000" &&
+        box().querySelector(".info").textContent.startsWith("2 files · changed") && box().querySelector(".why").textContent.startsWith("ThorBro found it by the game's title ID") &&
+        box().querySelector(".hint-warn").textContent.includes("can't write"), box().textContent);
+      [...box().querySelectorAll(".modal-foot button")].find((b) => b.textContent === "Add this save").click();
+      await until(() => callsOf("add_save").length === 1 && document.querySelectorAll("#game-list .card").length === 3);
+      check("add save: 'Add this save' stores game, emulator, title ID and folder, the new card appears",
+        JSON.stringify(callsOf("add_save")[0].args) === JSON.stringify({ title: "Super Mario Odyssey", emulator: "peanuts", titleId: "0100000000010000", thor: `${PEANUTS}/0100000000010000` }) &&
+        [...document.querySelectorAll("#game-list .card h2")].some((h) => h.textContent === "Super Mario Odyssey"), JSON.stringify(callsOf("add_save")));
+      // The same save again is marked, "Wrong folder? Browse" opens the old picker in the emulator's folders.
+      $("#btn-add-game").click();
+      await until(() => !!box().querySelector("input.search"));
+      typeSearch("odyssey");
+      await until(() => box().querySelectorAll(".emu-row-pick").length === 3);
+      const peanutsRow = [...box().querySelectorAll(".emu-row-pick")].find((r) => r.querySelector("b").textContent === "Peanuts");
+      check("add save: a save that is already managed is greyed out", peanutsRow.disabled && peanutsRow.querySelector(".state").textContent === "Already in your saves");
+      H.browse = [{ path: `${EDEN}/0100000000010000`, mtime: now, when: "today", files: 2, note: "[save folder]", match: false }, { path: "/sdcard/Android/data/dev.igawa6.edenduo/files/other", mtime: now, when: "today", files: 1, note: "", match: false }];
+      [...box().querySelectorAll(".emu-row-pick")].find((r) => r.querySelector("b").textContent === "Eden Duo").click();
+      await until(() => box().querySelector("h2").textContent === "Is this your save?");
+      [...box().querySelectorAll(".modal-foot button")].find((b) => b.textContent === "Wrong folder? Browse").click();
+      await until(() => box().querySelectorAll(".pick-item").length === 2);
+      check("add save: Browse = the folder picker with the emulator's folders", JSON.stringify(callsOf("browse_emulator").pop().args) === JSON.stringify({ emulator: "eden-duo" }) &&
+        box().querySelector(".pick-item .s").textContent.includes("[save folder]"));
+      box().querySelectorAll(".pick-item")[1].click();
+      await until(() => box().querySelector("h2") && box().querySelector("h2").textContent === "Is this your save?");
+      check("add save: a picked folder comes back to step 2, marked as picked by hand",
+        box().querySelector(".path").textContent === "Android/data/dev.igawa6.edenduo/files/other" && box().querySelector(".why").textContent.startsWith("You picked this folder yourself") && !box().querySelector(".hint-warn"));
+      [...box().querySelectorAll(".modal-foot button")].find((b) => b.textContent === "Back").click();
+      await until(() => box().querySelector("h2").textContent === "Add a game save");
+      [...box().querySelectorAll(".modal-foot button")].find((b) => b.textContent === "The game isn't on the Thor").click();
+      await until(() => box().querySelector("h2") && box().querySelector("h2").textContent === "Add game");
+      check("add save: 'The game isn't on the Thor' opens the search-all-folders flow with the query", box().querySelector("input").value === "odyssey");
+      key("Escape");
+      showTab("start");
+    }
+
     check("no JS errors logged", !(H.logs || []).length, (H.logs || []).join(" | "));
   } catch (e) {
     check("test crashed", false, (e && e.stack) || e);

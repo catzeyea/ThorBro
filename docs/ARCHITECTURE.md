@@ -39,6 +39,9 @@ For screen mirroring it starts `scrcpy`.
 | `files.rs` | File manager (list, rename, delete, sizes), copy queue with progress and Cancel: PC → Thor, inside the Thor (verified moves), Thor → PC ("Copy to PC…" from the file pool). |
 | `library.rs` | Finding ES-DE `ROMs` folders and assigning dropped files to a system (Switch title ID, header bytes, file extension). |
 | `systems.rs` | Built-in list of known systems (aliases, extensions) for folders without ES-DE `systeminfo.txt`. |
+| `emulators/` | Emulator profiles (Update 9): `mod.rs` loads and validates the declarative JSON profiles (built-in from `profiles/*.json`, the user's from `<config dir>/thorBro/profiles`, same id replaces), placeholders, path rules, matching a save folder to a profile; `ids.rs` parses title IDs (Switch file names, 3DS headers), yuzu `profiles.dat`, ini values, display titles; `thor.rs` resolves a profile on the Thor (installed apps, `{base}`, `{user}`, existing save folders, games an emulator brings, browse folders). Format: `profiles/README.md`. |
+| `catalog.rs` | The game catalog for Start and "Add a game save": library games with title IDs, games from emulators, installed emulators and their saves, covers (three parts in parallel threads). |
+| `art.rs` | Covers from iiSU's icons on the Thor: index, PC cache (`<cache dir>/thorBro/art`), the `thorart://` protocol registered in `main.rs`. |
 | `esde_import.rs` | "Import ES-DE info": preview and write ES-DE `systeminfo.txt` files (one place for the format), optional case-only renames to ES-DE folder names. |
 | `settings.rs` | `<config dir>/thorBro/settings.json` (`%APPDATA%`, `~/Library/Application Support`, `~/.config`): custom game library folders, systems picked per folder, pinned Thor folders (storage + path, in pin order, at most 12) and the last used stream options per display. |
 | `unpack.rs` | Extracting archives (zip/7z/tar in Rust, otherwise external 7z/bsdtar/unrar), making file names FAT-safe. |
@@ -47,12 +50,12 @@ For screen mirroring it starts `scrcpy`.
 | `pcstream/` | "Stream PC games to your Thor" (sub-tab of Stream): `sunshine.rs` (service state, `GET /serverinfo`), `network.rs` (LAN addresses, `tailscale` CLI), `admin.rs` (Sunshine admin API over HTTPS from Rust, login in the OS keychain, pairing, app list), `thor.rs` (Moonlight/Tailscale app check, "Play on Thor" and "Send to Thor app" via `am start`), `profile.rs` (stream profile JSON, see `STREAM-PROFILE.md`). Background: `PC-STREAMING-RESEARCH.md`. |
 | `util.rs` | Small helpers: formatting sizes/times, MD5, copying and mirroring folders (replacement for rsync), `which`, running a process with a timeout. |
 | `saves/mod.rs` | Overview of the save module, shared helpers, re-exports. |
-| `saves/config.rs` | Reading and writing `games.json`, data and backup folders. |
+| `saves/config.rs` | Reading and writing `games.json` (entries carry emulator, title, title ID, last sync since Update 9; old entries are tagged once, the old file is kept as `games.json.before-update9`), data and backup folders. |
 | `saves/snapshot.rs` | "Fingerprint" of a save folder (MD5 per file) and comparing two fingerprints. |
 | `saves/scan.rs` | Searching the PC and the Thor for possible save folders of a game. |
 | `saves/ai.rs` | Letting the `claude` CLI pick the matching folders from the search results (optional). |
-| `saves/transfer.rs` | Copying folders between PC and Thor, backups, closing running emulators. |
-| `saves/sync.rs` | Status, plan and the actual sync "Continue on PC/Thor". |
+| `saves/transfer.rs` | Copying folders between PC and Thor (on shared storage a rename-swap: old aside, new in, old removed last), backups, closing running emulators. |
+| `saves/sync.rs` | Status, plan and the actual sync "Continue on PC/Thor". The emulator package comes from the profile; profiles with `write: false` (Peanuts) block writing to the Thor. |
 | `saves/import.rs` | The flow for importing a downloaded save. |
 | `saves/import_package.rs` | Fetching an import package, extracting it and stripping readmes/ROMs/images. |
 | `saves/import_root.rs` | Finding the sub-folder in the package that matches the game's save folder (rearranging files if needed). |
@@ -70,14 +73,16 @@ For screen mirroring it starts `scrcpy`.
 | `js/files-actions.js` | File manager tab, part 2: cut/copy/paste, rename in place, move, delete, context menus, dragging rows (into folders or into the file pool). |
 | `js/transfer.js` | Sending to the Thor: drag & drop with the drop card, Ctrl+O / "Add files …", sort dialog, copy queue, transfer strip (shows the "transfer" events, incl. "file X of Y"). |
 | `js/pool.js` | The file pool in the sidebar (collect Thor files, "Copy to PC…"), the large-transfer confirmation used by drops and paste. |
-| `js/saves.js` | Game cards, card menu, sync flow. |
-| `js/saves-setup.js` | Adding a game (search, AI suggestion, check). |
+| `js/catalog.js` | The game catalog (`game_catalog`), emulator profiles, covers (`fetch_art`, `thorart://`), placeholders. |
+| `js/saves.js` | Save cards (one per game and emulator, emulator chip), card menu, sync flow, asking for the PC folder. |
+| `js/saves-add.js` | "+ Add a game save": search → emulators with a save → one folder → add; "Wrong folder? Browse". |
+| `js/saves-setup.js` | Searching all folders for a save (PC + Thor, AI suggestion): fallback for emulators without a profile and PC-only saves. |
 | `js/saves-import.js` | Importing a save. |
 | `js/stream.js` | Stream tab, sub-tab "Mirror Thor screens": three tiles (both / top / bottom, fixed ids 0 and 4), Stop, failures; the scrcpy display detection for the screen picker. |
 | `js/pcstream.js` | Stream tab, sub-tab "Stream PC games" (status chips, "Play on Thor", "Send to Thor app", pairing) and the Help page (Sunshine and login, addresses, Thor apps, screen picker, checklist, stream profile). |
 | `js/pins.js` | Pinned Thor folders: pin button in the path bar (Ctrl+D), "pinned" card in the sidebar, "pinned" row on the Start tab, "not found" state (`pins`, `add_pin`, `remove_pin`, `pins_found`). |
 | `js/status.js` | Thor status on the Start tab (drawn gauges) and ThorBro's mood (priority table and thresholds in one constants block), shown on the Start tab and in the header. Reads `thor_status` only while Start is open and a Thor is connected; a tick is skipped while the last reading runs. |
-| `js/start.js` | Start tab library tiles, the file manager's location sidebar, its keyboard shortcuts panel. |
+| `js/start.js` | Start tab games by console (emulator chips, square covers, "+ Add emulator", "+ Add a console or a folder"), the file manager's location sidebar, its keyboard shortcuts panel. |
 | `js/main.js` | Startup: opens Start (every launch, the last tab is not remembered), first device poll and timers (device, stream, Start page status). |
 
 The JS files are classic `<script>` files without `type="module"`. They share one global scope,

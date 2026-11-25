@@ -34,6 +34,17 @@
     cpu_temp_c: 34.8,
   };
   H.cpuStep = { busy: 23, total: 100 };
+  // Saves tab and game catalog (Update 9): empty by default, the Update 9 tests fill them.
+  H.games = {};
+  H.profiles = { profiles: [], errors: [], user_dir: "/home/me/.config/thorBro/profiles" };
+  H.catalog = { consoles: [], emulators: [], search: [], profile_errors: [] };
+  H.artMissing = [];
+  H.coverUrls = [];
+  H.status = {};
+  H.defaultStatus = { pc: { exists: false, files: 0, newest: 0, newest_text: "—", summary: "", names: [] }, thor: { exists: false, files: 0, newest: 0, newest_text: "—", summary: "", names: [] }, same: false };
+  H.plan = {};
+  H.browse = [];
+  H.pcCands = [];
   // Fake scrcpy: detected displays, running display ids, failures; failStart[id] = error text.
   const opts = () => ({ max_size: 0, bitrate_mbps: 16, always_on_top: false });
   H.stream = {
@@ -137,7 +148,25 @@
     pins_found: ({ paths }) => paths.map((p) => !!fs.get(p)?.dir),
     classify: () => [],
     cancel_transfer: () => false,
-    games: () => ({}),
+    // Saves and the game catalog (Update 9). Tests fill H.games / H.catalog / H.status.
+    games: () => JSON.parse(JSON.stringify(H.games)),
+    emulator_profiles: () => JSON.parse(JSON.stringify(H.profiles)),
+    game_catalog: () => { if (H.fail.game_catalog) throw H.fail.game_catalog; return JSON.parse(JSON.stringify(H.catalog)); },
+    fetch_art: ({ items }) => items.map((item) => !H.artMissing.includes(item.key)),
+    game_status: ({ name }) => JSON.parse(JSON.stringify(H.status[name] || H.defaultStatus)),
+    plan_sync: ({ name, target }) => ({ ...JSON.parse(JSON.stringify(H.plan[name] || {})), target }),
+    run_sync: () => null,
+    peek: ({ path }) => ({ exists: true, files: 3, newest: now, newest_text: "x", summary: "3 files", names: [path] }),
+    browse_emulator: () => JSON.parse(JSON.stringify(H.browse)),
+    scan_pc_for: () => JSON.parse(JSON.stringify(H.pcCands)),
+    set_save_folder: ({ name, side, path }) => { H.games[name][side] = path; },
+    add_save: ({ title, emulator, titleId, thor }) => {
+      const key = `${title} (${emulator})`;
+      if (H.games[key]) throw "This save is already in your list.";
+      H.games[key] = { pc: null, thor, emulator, title, title_id: titleId };
+      return key;
+    },
+    open_profiles_dir: () => null,
     stream_displays: () => JSON.parse(JSON.stringify(H.stream.displays)),
     stream_start_displays: ({ displays }) => { displays.forEach((d) => streamStartOne(d.id)); return streamStatus(); },
     stream_start: ({ which }) => { (which === "top" ? [0] : which === "bottom" ? [4] : [0, 4]).forEach(streamStartOne); return streamStatus(); },
@@ -177,7 +206,14 @@
   }
   const listeners = {};
   window.__TAURI__ = {
-    core: { invoke },
+    // Covers (thorart:// in the app): a tiny valid GIF, the key is recorded in H.coverUrls.
+    core: {
+      invoke,
+      convertFileSrc: (key, protocol) => {
+        H.coverUrls.push(`${protocol}:${key}`);
+        return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7#" + key;
+      },
+    },
     event: { listen: (name, cb) => { (listeners[name] ||= []).push(cb); return Promise.resolve(() => {}); } },
     // The drag & drop handler is kept, so tests can send "enter" / "over" / "leave" / "drop" (H.dragDrop).
     webview: { getCurrentWebview: () => ({ onDragDropEvent: (cb) => { H.dragDrop = cb; return Promise.resolve(() => {}); } }) },

@@ -4,7 +4,7 @@
 //! working: `~/.config/thor-save/games.json` and `~/.local/share/thor-save/backups`.
 //!
 //! The module is split into files by topic:
-//! - `config`         – games.json, data folders, slugs
+//! - `config`         – games.json (and its Update 9 migration), data folders, slugs
 //! - `snapshot`       – "fingerprint" of a save folder (MD5 per file) and comparing two of them
 //! - `scan`           – searching PC and Thor for folders that may contain saves
 //! - `ai`             – letting the `claude` CLI pick the right folders from the scan results
@@ -30,9 +30,10 @@ mod sync;
 mod transfer;
 
 pub use ai::{ai_pick, AiPick};
-pub use config::{backups_root, get_game, load_games, save_games, slug, state_dir, GameCfg, Games};
+pub use config::{backups_root, get_game, load_games, mark_synced, migrate_games, save_games, slug, state_dir, tag_games, GameCfg, Games};
 pub use import::{check_root, import_save, prepare_import, scan_thor_sources, Prepared, RootCheck};
 pub use scan::{scan_pc, scan_thor, Cand};
+pub(crate) use scan::thor_stats;
 pub use snapshot::{info, snapshot, SnapInfo};
 pub use sync::{plan_sync, run_sync, status, Plan, Status};
 

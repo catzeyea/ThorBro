@@ -10,8 +10,8 @@
 use super::config::{state_dir, GameCfg};
 use super::side_label;
 use super::snapshot::{info, newest, pc_snapshot, same, thor_snapshot, Snap, SnapInfo};
-use super::transfer::{backup_dir, backup_side, ensure_thor_parent, prune_backups, pull_dir, push_dir, stop_thor_pkg, thor_running_pkg};
-use crate::util;
+use super::transfer::{backup_dir, backup_side, ensure_thor_parent, is_running, prune_backups, pull_dir, push_dir, stop_thor_pkg};
+use crate::{adb, emulators, util};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -48,6 +48,27 @@ pub struct Plan {
     pub dst_newer: bool,
     /// Emulator running on the Thor that has to be closed first (only when syncing to the Thor).
     pub running_pkg: Option<String>,
+    /// Why ThorBro won't write this save to the Thor (profile with `write: false`), only when
+    /// syncing to the Thor. `None` = fine.
+    pub blocked: Option<String>,
+}
+
+/// Package of the emulator that owns the Thor folder of `cfg`: from its profile (this also
+/// works for folders outside `Android/data`, like Azahar's on the SD card), else from the path.
+pub fn thor_package(cfg: &GameCfg) -> Option<String> {
+    let from_profile = cfg.emulator.as_deref().and_then(|id| emulators::load().by_id(id).map(|profile| profile.package.clone()));
+    from_profile.or_else(|| adb::thor_pkg(cfg.thor.as_deref()?))
+}
+
+/// The emulator of `cfg` if it is running on the Thor right now.
+pub fn running_package(cfg: &GameCfg) -> Option<String> {
+    thor_package(cfg).filter(|pkg| is_running(pkg))
+}
+
+/// Why ThorBro may not write the Thor save of `cfg` (the profile turns writing off), or `None`.
+pub fn thor_write_block(cfg: &GameCfg) -> Option<String> {
+    let id = cfg.emulator.as_deref()?;
+    emulators::load().by_id(id)?.write_block()
 }
 
 /// Snapshots of both sides as `(source, destination)` for a sync towards `target`.
@@ -73,7 +94,8 @@ pub fn plan_sync(cfg: &GameCfg, target: &str) -> Plan {
         empty: is_missing_or_empty(&src),
         same: same(&src, &dst),
         dst_newer: !is_missing_or_empty(&dst) && newest(&dst) > newest(&src),
-        running_pkg: if target == "thor" { thor_running_pkg(cfg.thor.as_deref()) } else { None },
+        running_pkg: if target == "thor" { running_package(cfg) } else { None },
+        blocked: if target == "thor" { thor_write_block(cfg) } else { None },
         src: info(&src),
         dst: info(&dst),
     }
@@ -88,6 +110,11 @@ pub fn run_sync(game: &str, cfg: &GameCfg, target: &str, stop_pkg: Option<&str>)
         (Some(pc), Some(thor)) => (pc.clone(), thor.clone()),
         _ => return Err("This game is only set up on one side.".into()),
     };
+    if target == "thor" {
+        if let Some(reason) = thor_write_block(cfg) {
+            return Err(reason);
+        }
+    }
     if let Some(pkg) = stop_pkg {
         stop_thor_pkg(pkg);
     }

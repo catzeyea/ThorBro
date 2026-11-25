@@ -14,7 +14,8 @@ use super::import_package::{clean_import, ext_lower, extract_archive, fetch_thor
 use super::import_root::{guess_import_root, import_dirs};
 use super::scan::{thor_roots, thor_stats, Cand};
 use super::snapshot::{info, pc_snapshot, same, snapshot, thor_snapshot, SnapInfo};
-use super::transfer::{backup_dir, backup_side, ensure_thor_parent, prune_backups, push_dir, stop_thor_pkg, tempdir, thor_running_pkg};
+use super::sync::{running_package, thor_write_block};
+use super::transfer::{backup_dir, backup_side, ensure_thor_parent, prune_backups, push_dir, stop_thor_pkg, tempdir};
 use super::{save_re, side_label, tokens};
 use crate::adb::{posix_basename, sh, shell_quote};
 use crate::util;
@@ -224,7 +225,10 @@ fn touch_tree(root: &Path) {
 pub fn import_save(game: &str, src_dir: &Path, targets: &[String], merge: bool, step: &dyn Fn(&str)) -> Result<(), String> {
     let cfg = get_game(game)?;
     if targets.iter().any(|target| target == "thor") {
-        if let Some(pkg) = thor_running_pkg(cfg.thor.as_deref()) {
+        if let Some(reason) = thor_write_block(&cfg) {
+            return Err(reason);
+        }
+        if let Some(pkg) = running_package(&cfg) {
             step(&format!("Closing {pkg} …"));
             stop_thor_pkg(&pkg);
         }
