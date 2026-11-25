@@ -6,7 +6,8 @@
 //! - Since Android 11, adbd may not create folders under `Android/data`, but the shell may. So we
 //!   push to `/data/local/tmp` first and copy from there with `cp`.
 //! - A new save is first written next to the old one (`<folder>.thor-save-neu`) and only swapped
-//!   in at the end, so a failed copy never leaves a half-written save behind.
+//!   in at the end, so a failed copy never leaves a half-written save behind. On shared storage
+//!   the swap is two renames (old aside, new in) and the old copy is removed last.
 //!
 //! Used by `sync.rs` and `import.rs`.
 
@@ -244,26 +245,48 @@ fn push_dir_shared(local: &Path, remote: &str, stage: &str, local_name: &str, st
         sh(&format!("rm -rf {quoted_stage}"));
         return Err(format!("Copying on the Thor failed:\n{}", output.err_text()));
     }
+    rename_swap(remote, stage, staged_folder)
+}
 
-    let output = sh(&format!(
-        "rm -rf {r} && mv {i} {r} && rmdir {quoted_stage} && echo OK",
-        r = shell_quote(remote),
-        i = shell_quote(staged_folder)
-    ));
-    if !output.stdout.contains(SUCCESS_MARKER) {
+/// Suffix of the old save while it is swapped out (removed at the end).
+const OLD_SUFFIX: &str = ".thor-save-old";
+
+/// Printed by the swap script when the new save is in place but the old copy couldn't be removed.
+const OLD_LEFT_MARKER: &str = "OLD-LEFT";
+
+/// The swap script: rename the old save aside, rename the new one into place, then remove the
+/// old one. If the second rename fails, the old save is renamed back. Renames only need write
+/// access to the parent folder, never to the save's own sub folders.
+fn rename_swap_script(remote: &str, stage: &str, staged_folder: &str) -> String {
+    let r = shell_quote(remote);
+    let o = shell_quote(&format!("{remote}{OLD_SUFFIX}"));
+    let i = shell_quote(staged_folder);
+    let s = shell_quote(stage);
+    format!(
+        "if [ -e {r} ]; then rm -rf {o} && mv {r} {o} || {{ echo MOVE-ASIDE-FAILED; exit 0; }}; fi; \
+         if mv {i} {r}; then rmdir {s}; echo {SUCCESS_MARKER}; rm -rf {o} 2>/dev/null || echo {OLD_LEFT_MARKER}; \
+         else [ -e {o} ] && mv {o} {r}; echo SWAP-FAILED; fi"
+    )
+}
+
+/// Swaps the staged folder in for `remote` (see `rename_swap_script`).
+fn rename_swap(remote: &str, stage: &str, staged_folder: &str) -> Result<(), String> {
+    let output = sh(&rename_swap_script(remote, stage, staged_folder));
+    if !output.stdout.lines().any(|line| line.trim() == SUCCESS_MARKER) {
         return Err(format!(
-            "Couldn't move the new save into place on the Thor:\n{}\nThe new save is still in {stage}",
-            output.stderr
+            "Couldn't move the new save into place on the Thor:\n{}\nThe old save is unchanged, the new one is still in {stage}",
+            output.err_text()
         ));
+    }
+    if output.stdout.contains(OLD_LEFT_MARKER) {
+        eprintln!("push: the old save stays in {remote}{OLD_SUFFIX} (couldn't remove it)");
     }
     Ok(())
 }
 
-/// Package name of the emulator that owns `path`, if it is currently running on the Thor.
-pub fn thor_running_pkg(path: Option<&str>) -> Option<String> {
-    let pkg = adb::thor_pkg(path?)?;
-    let pid = sh(&format!("pidof {}", shell_quote(&pkg))).stdout;
-    if pid.trim().is_empty() { None } else { Some(pkg) }
+/// Is the app `pkg` running on the Thor right now?
+pub fn is_running(pkg: &str) -> bool {
+    !sh(&format!("pidof {}", shell_quote(pkg))).stdout.trim().is_empty()
 }
 
 /// Force-closes an app on the Thor (so it can't overwrite the save we are writing).
@@ -282,5 +305,38 @@ pub fn backup_side(side: &str, path: &str, backup: &Path) -> Result<(), String> 
         util::copy_tree(Path::new(path), backup, false)
     } else {
         pull_dir(path, backup)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn swap_script_renames_aside_and_rolls_back() {
+        let script = rename_swap_script("/sdcard/x/save", "/sdcard/x/save.thor-save-neu", "/sdcard/x/save.thor-save-neu/save");
+        assert!(script.contains("mv /sdcard/x/save /sdcard/x/save.thor-save-old"));
+        assert!(script.contains("mv /sdcard/x/save.thor-save-neu/save /sdcard/x/save;"));
+        assert!(script.contains("else [ -e /sdcard/x/save.thor-save-old ] && mv /sdcard/x/save.thor-save-old /sdcard/x/save"));
+        assert!(!script.contains("rm -rf /sdcard/x/save &&"), "the old save is never deleted before the new one is in place");
+        let quoted = rename_swap_script("/storage/A-B/Nintendo 3DS/x", "/s", "/s/x");
+        assert!(quoted.contains("'/storage/A-B/Nintendo 3DS/x.thor-save-old'"));
+    }
+
+    /// Real Thor: swaps a throwaway folder in /sdcard/Download/thorbro-selftest-swap and
+    /// checks old content is gone and new content is there. Removes everything afterwards.
+    #[test]
+    #[ignore]
+    fn device_rename_swap_on_the_thor() {
+        let root = "/sdcard/Download/thorbro-selftest-swap";
+        let remote = format!("{root}/save");
+        let stage = format!("{remote}{STAGING_SUFFIX}");
+        sh(&format!("rm -rf {root}; mkdir -p {remote}/0 {stage}/save/0 && echo old > {remote}/0/a.sav && echo new > {stage}/save/0/b.sav"));
+        let result = rename_swap(&remote, &stage, &format!("{stage}/save"));
+        let listing = sh(&format!("ls -R {root}; cat {remote}/0/b.sav")).stdout;
+        sh(&format!("rm -rf {root}"));
+        result.unwrap();
+        assert!(listing.contains("b.sav") && !listing.contains("a.sav") && listing.contains("new"), "{listing}");
+        assert!(!listing.contains("thor-save-old") && !listing.contains("thor-save-neu"), "{listing}");
     }
 }

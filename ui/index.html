@@ -35,7 +35,7 @@
   </header>
 
   <!-- ============================ Start ============================ -->
-  <!-- Filled by js/start.js from the libraries the file manager already loaded (S.libs). -->
+  <!-- Filled by js/start.js (games from js/catalog.js), js/status.js and js/pins.js. -->
   <section class="page active" id="page-start">
     <!-- Thor status (js/status.js): ThorBro's mood and one row of drawn gauges. A value that
          can't be read has no column. Readings only while this page is open and a Thor is connected. -->
@@ -62,13 +62,15 @@
       <span class="label">pinned</span>
       <div class="pin-chips" id="start-pin-chips"></div>
     </section>
-    <section class="libraries" aria-labelledby="start-libs-title">
+    <!-- Games by console (js/start.js, data from js/catalog.js): emulator chips and square
+         covers from iiSU's art on the Thor (ThorBro ships no art). -->
+    <section class="games" aria-labelledby="start-games-title">
       <div class="section-head">
-        <h2 id="start-libs-title">Libraries</h2>
-        <span class="label">open one in Files</span>
+        <h2 id="start-games-title">Games</h2>
+        <span class="label">by console, with covers from the launchers on your Thor</span>
       </div>
-      <div class="tiles" id="start-tiles"></div>
-      <p class="tiles-empty dim hidden" id="start-tiles-empty"></p>
+      <div class="consoles" id="start-consoles"></div>
+      <p class="tiles-empty dim hidden" id="start-games-empty"></p>
     </section>
   </section>
 
@@ -199,14 +201,14 @@
     <div class="saves-head">
       <div>
         <h1>Saves</h1>
-        <p class="dim">Move saves between PC and Thor with one click. Every copy makes a backup first.</p>
+        <p class="dim">Move a save between PC and Thor with one click. Every copy makes a backup first.</p>
       </div>
-      <button class="primary" id="btn-add-game">+ Add game</button>
+      <button class="primary" id="btn-add-game">+ Add a game save</button>
     </div>
     <div id="game-list" class="cards"></div>
     <div id="games-empty" class="empty hidden">
-      <h2>No games yet</h2>
-      <p class="dim">Add a game. I'll find the save folders on the PC and the Thor, you confirm them.</p>
+      <h2>No saves yet</h2>
+      <p class="dim">Add a game save: search the game, pick the emulator that has your save, done.</p>
     </div>
   </section>
 
@@ -355,8 +357,10 @@
   <script src="js/pool.js"></script>
   <script src="js/esde.js"></script>
   <script src="js/transfer.js"></script>
+  <script src="js/catalog.js"></script>
   <script src="js/saves.js"></script>
   <script src="js/saves-setup.js"></script>
+  <script src="js/saves-add.js"></script>
   <script src="js/saves-import.js"></script>
   <script src="js/stream.js"></script>
   <script src="js/pcstream.js"></script>

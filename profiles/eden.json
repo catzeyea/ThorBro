@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "id": "eden",
+  "name": "Eden",
+  "package": "dev.eden.eden_emulator",
+  "console": "switch",
+  "saves": {
+    "base": {
+      "path": "{appdata}/files/nand",
+      "ini": { "file": "{appdata}/files/config/config.ini", "section": "Data%20Storage", "key": "nand_directory" }
+    },
+    "user": {
+      "resolver": "switch-profiles-dat",
+      "file": "{base}/system/save/8000000000000010/su/avators/profiles.dat",
+      "index": { "file": "{appdata}/files/config/config.ini", "section": "System", "key": "current_user" }
+    },
+    "folder": "{base}/user/save/0000000000000000/{user}/{title_id}",
+    "title_id": "switch",
+    "write": true
+  },
+  "art": ["iisu"]
+}

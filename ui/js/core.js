@@ -3,8 +3,9 @@
 // All real work happens in Rust (src/commands.rs); the UI only displays it. The JS is split
 // into plain <script> files (no bundler, no modules). They share one global scope and are
 // loaded in this order by index.html:
-//   core.js → dialogs.js → device.js → files.js → files-actions.js → pool.js → esde.js → transfer.js → saves.js →
-//   saves-setup.js → saves-import.js → stream.js → pcstream.js → pins.js → status.js → start.js → main.js
+//   core.js → dialogs.js → device.js → files.js → files-actions.js → pool.js → esde.js → transfer.js → catalog.js →
+//   saves.js → saves-setup.js → saves-add.js → saves-import.js → stream.js → pcstream.js → pins.js → status.js →
+//   start.js → main.js
 // Code that runs immediately at load time may only use names from the same or earlier files.
 // Inside functions, any name works, because those run later.
 "use strict";

@@ -9,7 +9,7 @@
 //! `saves/`, `stream.rs`, `pcstream/` and `unpack.rs`.
 
 use crate::library::{self, Library};
-use crate::{adb, esde_import, files, pcstream, saves, settings, status, stream, systems, unpack, util};
+use crate::{adb, art, catalog, emulators, esde_import, files, pcstream, saves, settings, status, stream, systems, unpack, util};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -400,9 +400,13 @@ pub fn cancel_transfer(state: State<'_, AppState>, clear_queue: bool) -> bool {
 
 // --- Saves -------------------------------------------------------------------------------------
 
-/// All configured games.
+/// All configured games. Entries from before Update 9 get their emulator tagged first
+/// (`saves::migrate_games`, keeps a backup of the old games.json).
 #[tauri::command]
 pub fn games() -> saves::Games {
+    if let Err(e) = saves::migrate_games(&emulators::load()) {
+        eprintln!("games.json migration: {e}");
+    }
     saves::load_games()
 }
 
@@ -421,7 +425,14 @@ pub async fn plan_sync(name: String, target: String) -> CmdResult<saves::Plan> {
 /// Performs the sync. Returns the backup folder, if a backup was made.
 #[tauri::command]
 pub async fn run_sync(name: String, target: String, stop_pkg: Option<String>) -> CmdResult<Option<String>> {
-    run_blocking(move || saves::run_sync(&name, &saves::get_game(&name)?, &target, stop_pkg.as_deref())).await
+    run_blocking(move || {
+        let backup = saves::run_sync(&name, &saves::get_game(&name)?, &target, stop_pkg.as_deref())?;
+        if let Err(e) = saves::mark_synced(&name) {
+            eprintln!("couldn't note the sync time: {e}");
+        }
+        Ok(backup)
+    })
+    .await
 }
 
 /// Answer of `scan_game`: candidates on both sides plus the AI suggestion.
@@ -457,11 +468,20 @@ pub async fn peek(side: String, path: String) -> CmdResult<saves::SnapInfo> {
     run_blocking(move || Ok(saves::info(&saves::snapshot(&side, Some(&path))))).await
 }
 
-/// Adds or updates a game in games.json.
+/// Adds or updates a game in games.json (the "search all folders" flow). Other fields of an
+/// existing entry are kept; a changed Thor folder is tagged with its emulator again.
 #[tauri::command]
 pub fn save_game(name: String, pc: Option<String>, thor: Option<String>) -> CmdResult<()> {
     let mut games = saves::load_games();
-    games.insert(name, saves::GameCfg { pc, thor });
+    let mut cfg = games.remove(&name).unwrap_or_default();
+    if cfg.thor != thor {
+        cfg.emulator = None;
+        cfg.title_id = None;
+    }
+    cfg.pc = pc;
+    cfg.thor = thor;
+    games.insert(name, cfg);
+    saves::tag_games(&mut games, &emulators::load());
     saves::save_games(&games)
 }
 
@@ -471,6 +491,200 @@ pub fn remove_game(name: String) -> CmdResult<()> {
     let mut games = saves::load_games();
     games.remove(&name);
     saves::save_games(&games)
+}
+
+// --- Emulators, game catalog, covers (Update 9) ------------------------------------------------
+
+/// One emulator profile for the UI (chips, "+ Add emulator", write guard on the cards).
+#[derive(Serialize)]
+pub struct ProfileSummary {
+    id: String,
+    name: String,
+    package: String,
+    console: String,
+    write: bool,
+    write_note: Option<String>,
+    source: &'static str,
+}
+
+/// Answer of `emulator_profiles`.
+#[derive(Serialize)]
+pub struct ProfilesAnswer {
+    profiles: Vec<ProfileSummary>,
+    errors: Vec<emulators::ProfileError>,
+    /// Where the user's own profiles go.
+    user_dir: String,
+}
+
+/// All usable emulator profiles (built-in + the user's) and the reasons for skipped ones. No adb.
+#[tauri::command]
+pub fn emulator_profiles() -> ProfilesAnswer {
+    let profiles = emulators::load();
+    ProfilesAnswer {
+        profiles: profiles
+            .list
+            .iter()
+            .map(|loaded| ProfileSummary {
+                id: loaded.profile.id.clone(),
+                name: loaded.profile.name.clone(),
+                package: loaded.profile.package.clone(),
+                console: loaded.profile.console.clone(),
+                write: loaded.profile.saves.write,
+                write_note: loaded.profile.write_block(),
+                source: loaded.source,
+            })
+            .collect(),
+        errors: profiles.errors,
+        user_dir: emulators::user_dir().map(|dir| dir.to_string_lossy().into_owned()).unwrap_or_default(),
+    }
+}
+
+/// Opens the folder for the user's own profiles (created if missing).
+#[tauri::command]
+pub fn open_profiles_dir() -> CmdResult<()> {
+    let dir = emulators::user_dir().ok_or("No config folder on this system")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    util::open_in_os(&dir)
+}
+
+/// The game catalog for Start and "Add a game save": consoles, games with covers, installed
+/// emulators and their saves (several adb calls, about a second).
+#[tauri::command]
+pub async fn game_catalog(state: State<'_, AppState>) -> CmdResult<catalog::Catalog> {
+    let libs = state.libs.lock().unwrap().clone();
+    run_blocking(move || {
+        let libs = if libs.is_empty() { library::find_libraries(&adb::storages(), &settings::load()) } else { libs };
+        Ok(catalog::build(&libs))
+    })
+    .await
+}
+
+/// Copies covers from the Thor into the PC cache. One `true` per item that is cached now.
+#[tauri::command]
+pub async fn fetch_art(items: Vec<art::FetchItem>) -> CmdResult<Vec<bool>> {
+    run_blocking(move || Ok(art::fetch(&items))).await
+}
+
+/// The save folder of a game in one emulator, checked again right now (step 2 of the dialog).
+#[tauri::command]
+pub async fn find_save(emulator: String, title_id: String) -> CmdResult<Option<catalog::SaveEntry>> {
+    run_blocking(move || {
+        let profiles = emulators::load();
+        let profile = profiles.by_id(&emulator).ok_or_else(|| format!("Unknown emulator: {emulator}"))?;
+        Ok(catalog::find_save(profile, &title_id))
+    })
+    .await
+}
+
+/// "Wrong folder? Browse": folders with files below the emulator's data folder, save folders first.
+#[tauri::command]
+pub async fn browse_emulator(emulator: String) -> CmdResult<Vec<saves::Cand>> {
+    run_blocking(move || {
+        let profiles = emulators::load();
+        let profile = profiles.by_id(&emulator).ok_or_else(|| format!("Unknown emulator: {emulator}"))?;
+        let resolved = emulators::thor::resolve(profile);
+        if let Some(error) = &resolved.error {
+            return Err(error.clone());
+        }
+        let save_root = resolved.save_root();
+        Ok(emulators::thor::browse_dirs(&resolved)
+            .into_iter()
+            .map(|(path, files, mtime)| saves::Cand {
+                note: if save_root.as_ref().is_some_and(|root| path.starts_with(&format!("{root}/"))) { "[save folder]".into() } else { String::new() },
+                matched: false,
+                when: util::when(mtime),
+                path,
+                mtime,
+                files,
+            })
+            .collect())
+    })
+    .await
+}
+
+/// Adds the save of `title` in `emulator` (Thor folder `thor`) as a new entry. Returns its key.
+/// One entry per game and emulator; the same save twice is refused.
+#[tauri::command]
+pub fn add_save(title: String, emulator: String, title_id: String, thor: String) -> CmdResult<String> {
+    let profiles = emulators::load();
+    let profile = profiles.by_id(&emulator).ok_or_else(|| format!("Unknown emulator: {emulator}"))?;
+    let title = title.trim();
+    if title.is_empty() || title.chars().count() > 200 {
+        return Err("The game needs a name".into());
+    }
+    if !catalog::title_id_fits(profile, &title_id) {
+        return Err(format!("{title_id} isn't a {} title ID", profile.console));
+    }
+    let title_id = title_id.to_uppercase();
+    let thor = emulators::normalize_thor_path(&thor);
+    if !emulators::is_allowed_thor_path(&thor) {
+        return Err(format!("ThorBro doesn't use {thor} as a save folder"));
+    }
+    let mut games = saves::load_games();
+    let same_save = games.iter().find(|(_, cfg)| {
+        cfg.thor.as_deref().map(emulators::normalize_thor_path).as_deref() == Some(thor.as_str())
+            || (cfg.emulator.as_deref() == Some(emulator.as_str()) && cfg.title_id.as_deref() == Some(title_id.as_str()))
+    });
+    if let Some((name, cfg)) = same_save {
+        return Err(format!("This save is already in your list as “{}”.", cfg.title.as_deref().unwrap_or(name)));
+    }
+    let base_key = format!("{title} ({})", profile.name);
+    let mut key = base_key.clone();
+    let mut counter = 1;
+    while games.contains_key(&key) {
+        counter += 1;
+        key = format!("{base_key} {counter}");
+    }
+    games.insert(
+        key.clone(),
+        saves::GameCfg { pc: None, thor: Some(thor), emulator: Some(emulator), title: Some(title.to_string()), title_id: Some(title_id), last_sync: None },
+    );
+    saves::save_games(&games)?;
+    Ok(key)
+}
+
+/// Sets (or clears with `None`) the PC or Thor folder of an existing entry.
+#[tauri::command]
+pub fn set_save_folder(name: String, side: String, path: Option<String>) -> CmdResult<()> {
+    let mut games = saves::load_games();
+    let cfg = games.get_mut(&name).ok_or_else(|| format!("Game “{name}” doesn't exist"))?;
+    match side.as_str() {
+        "pc" => cfg.pc = path.filter(|path| !path.trim().is_empty()),
+        "thor" => {
+            let path = path.map(|path| emulators::normalize_thor_path(&path));
+            if let Some(path) = &path {
+                if !path.starts_with('/') {
+                    return Err(format!("{path} isn't a Thor path"));
+                }
+            }
+            cfg.thor = path;
+        }
+        _ => return Err(format!("Unknown side: {side}")),
+    }
+    saves::save_games(&games)
+}
+
+/// PC folders that may hold the save of entry `name`. Folders named like the game's title ID
+/// (Switch: `01007EF00011E000`, 3DS: `000ee000`) come first, marked `[title ID]`.
+#[tauri::command]
+pub async fn scan_pc_for(name: String) -> CmdResult<Vec<saves::Cand>> {
+    run_blocking(move || {
+        let cfg = saves::get_game(&name)?;
+        let title = cfg.title.clone().unwrap_or_else(|| name.clone());
+        let found = saves::scan_pc(&title);
+        let Some(title_id) = cfg.title_id.as_deref().map(str::to_lowercase) else { return Ok(found) };
+        let low = title_id[title_id.len().saturating_sub(8)..].to_string();
+        let wanted: Vec<&str> = if title_id.starts_with("00040000") { vec![title_id.as_str(), low.as_str()] } else { vec![title_id.as_str()] };
+        let (mut hits, rest): (Vec<saves::Cand>, Vec<saves::Cand>) = found
+            .into_iter()
+            .partition(|cand| cand.path.to_lowercase().split(['/', '\\']).any(|part| wanted.contains(&part)));
+        for hit in &mut hits {
+            hit.note = "[title ID]".into();
+        }
+        hits.extend(rest);
+        Ok(hits)
+    })
+    .await
 }
 
 /// Opens the backup folder of a game. `false` if there are no backups yet.
