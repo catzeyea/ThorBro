@@ -1,6 +1,6 @@
 [package]
 name = "thorbro"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 description = "ThorBro – files, games and save sync between your PC and the AYN Thor"
 license = "MIT"
