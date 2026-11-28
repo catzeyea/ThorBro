@@ -2,6 +2,7 @@
 /gen
 /tools
 /node_modules
+docs/design
 tauri.tools.json
 __pycache__/
 *.bak*
